@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Control Local de Pedidos</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  </head>
+  <body>
+    <div class="page-shell">
+      <aside class="sidebar">
+        <div class="brand-card">
+          <img
+            src="{{ url_for('static', filename='res/logo.png') }}"
+            alt="Control Rosa"
+            class="brand-logo"
+          >
+        </div>
+
+        <nav class="side-nav">
+          <button class="side-link active" type="button" data-section-target="materiales">
+            Materiales
+          </button>
+          <button class="side-link" type="button" data-section-target="productos">
+            Productos
+          </button>
+          <button class="side-link" type="button" data-section-target="pedidos">
+            Pedidos
+          </button>
+          <button class="side-link" type="button" data-section-target="calendario">
+            Calendario
+          </button>
+          <button class="side-link" type="button" data-section-target="estadistica">
+            Estadística
+          </button>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <section class="panel active" id="section-materiales">
+          <div class="panel-header">
+            <div>
+              <h3>Materiales</h3>
+            </div>
+            <div class="panel-actions">
+              <button class="ghost-button" type="button" id="add-material-top">+ Agregar fila</button>
+              <button class="primary-button" type="button" id="save-materials-top">Guardar Todo</button>
+            </div>
+          </div>
+
+          <div class="table-shell">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Cantidad por Bulto</th>
+                  <th>Precio por Bulto</th>
+                  <th>Unidades</th>
+                  <th>Precio por unidad</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="materials-table-body"></tbody>
+            </table>
+          </div>
+
+          <div class="panel-actions panel-actions-bottom">
+            <button class="ghost-button" type="button" id="add-material-bottom">+ Agregar fila</button>
+            <button class="primary-button" type="button" id="save-materials-bottom">Guardar Todo</button>
+          </div>
+        </section>
+
+        <section class="panel" id="section-productos">
+          <div class="panel-header">
+            <div>
+              <h3>Productos</h3>
+            </div>
+            <div class="panel-actions">
+              <button class="primary-button" type="button" id="create-product-button">Crear Producto</button>
+            </div>
+          </div>
+
+          <div class="products-toolbar">
+            <div class="category-pills" id="product-category-pills"></div>
+            <label class="products-search">
+              <span>Buscar producto</span>
+              <input
+                type="text"
+                id="product-search-input"
+                class="table-input"
+                placeholder="Escribí un nombre para filtrar"
+              >
+            </label>
+          </div>
+
+          <div class="table-shell">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Categoría</th>
+                  <th>Materiales</th>
+                  <th>Costo total</th>
+                  <th>Notas</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="products-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel" id="section-pedidos">
+          <div class="panel-header">
+            <div>
+              <h3>Pedidos</h3>
+            </div>
+            <div class="panel-actions">
+              <button class="primary-button" type="button" id="create-order-button">Crear Pedido</button>
+            </div>
+          </div>
+
+          <div class="orders-toolbar">
+            <label class="products-search">
+              <span>Buscar pedido</span>
+              <input
+                type="text"
+                id="order-search-input"
+                class="table-input"
+                placeholder="Cliente, contacto o producto"
+              >
+            </label>
+            <label class="products-search">
+              <span>Desde</span>
+              <input type="date" id="order-date-from" class="table-input">
+            </label>
+            <label class="products-search">
+              <span>Hasta</span>
+              <input type="date" id="order-date-to" class="table-input">
+            </label>
+            <label class="products-search">
+              <span>Estado</span>
+              <select id="order-delivery-filter" class="table-select">
+                <option value="all">Todos</option>
+                <option value="pending">Pendientes</option>
+                <option value="prepared">Preparados</option>
+                <option value="delivered">Entregados</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="bulk-orders-toolbar hidden" id="bulk-orders-toolbar">
+            <span class="bulk-orders-count" id="bulk-orders-count">0 seleccionados</span>
+            <select id="bulk-order-status" class="table-select">
+              <option value="prepared">Preparado</option>
+              <option value="delivered">Entregado</option>
+            </select>
+            <button class="primary-button" type="button" id="apply-bulk-order-status">Aplicar</button>
+          </div>
+
+          <div class="table-shell">
+            <table class="data-table orders-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th>Contacto</th>
+                  <th>Productos</th>
+                  <th>Total</th>
+                  <th>Saldo</th>
+                  <th>Estado</th>
+                  <th>Entrega</th>
+                  <th>
+                    <input type="checkbox" id="select-all-orders" aria-label="Seleccionar pedidos visibles">
+                  </th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="orders-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel" id="section-calendario">
+          <div class="panel-header">
+            <div>
+              <h3>Calendario</h3>
+            </div>
+            <div class="panel-actions">
+              <button class="ghost-button" type="button" id="calendar-prev-month">Mes anterior</button>
+              <div class="calendar-month-label" id="calendar-month-label"></div>
+              <button class="ghost-button" type="button" id="calendar-next-month">Mes siguiente</button>
+            </div>
+          </div>
+
+          <div class="calendar-legend">
+            <span class="calendar-legend-item green">1 a 3 pedidos</span>
+            <span class="calendar-legend-item orange">4 a 8 pedidos</span>
+            <span class="calendar-legend-item red">Más de 8 pedidos</span>
+          </div>
+
+          <div class="calendar-shell">
+            <div class="calendar-weekdays">
+              <span>Lun</span>
+              <span>Mar</span>
+              <span>Mié</span>
+              <span>Jue</span>
+              <span>Vie</span>
+              <span>Sáb</span>
+              <span>Dom</span>
+            </div>
+            <div class="calendar-grid" id="calendar-grid"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="section-estadistica">
+          <div class="panel-header">
+            <div>
+              <h3>Estadística</h3>
+              <p>Filtrá un período y seguí la evolución acumulada de cobranzas, costos y ganancia.</p>
+            </div>
+          </div>
+
+          <div class="stats-toolbar">
+            <label class="products-search">
+              <span>Desde</span>
+              <input type="date" id="stats-date-from" class="table-input">
+            </label>
+            <label class="products-search">
+              <span>Hasta</span>
+              <input type="date" id="stats-date-to" class="table-input">
+            </label>
+          </div>
+
+          <div class="stats-metrics">
+            <button class="metric-card stats-card active" type="button" data-stat-metric="collected">
+              <span>Total cobrado</span>
+              <strong id="stats-total-collected">$0,00</strong>
+              <small>Cobros registrados sobre los pedidos del período.</small>
+            </button>
+
+            <button class="metric-card stats-card" type="button" data-stat-metric="profit">
+              <span>Total ganancia</span>
+              <strong id="stats-total-profit">$0,00</strong>
+              <small>Diferencia estimada entre venta total y costo.</small>
+            </button>
+
+            <button class="metric-card stats-card" type="button" data-stat-metric="cost">
+              <span>Total costo</span>
+              <strong id="stats-total-cost">$0,00</strong>
+              <small>Costo estimado de producción de los pedidos.</small>
+            </button>
+          </div>
+
+          <div class="stats-chart-card">
+            <div class="stats-chart-header">
+              <div>
+                <p class="panel-kicker">Crecimiento</p>
+                <h4 id="stats-chart-title">Total cobrado</h4>
+              </div>
+              <div class="stats-chart-meta" id="stats-chart-meta"></div>
+            </div>
+
+            <div class="stats-chart-shell" id="stats-chart"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <datalist id="product-options"></datalist>
+
+    <div class="modal hidden" id="product-modal">
+      <div class="modal-card modal-large">
+        <div class="modal-header">
+          <div>
+            <p class="panel-kicker" id="product-modal-kicker">Nuevo producto</p>
+            <h3 id="product-modal-title">Crear Producto</h3>
+          </div>
+          <button class="icon-button close-button" type="button" data-close-modal="product-modal" aria-label="Cerrar">
+            <span>&times;</span>
+          </button>
+        </div>
+
+        <form id="product-form" class="modal-form">
+          <div class="product-modal-layout">
+            <div class="product-modal-main">
+              <div class="form-grid product-form-grid">
+                <label>
+                  <span>Nombre</span>
+                  <input type="text" name="name" placeholder="Nombre del producto" required>
+                </label>
+                <label>
+                  <span>Categoría</span>
+                  <select name="category" required>
+                    <option value="Primaria">Primaria</option>
+                    <option value="Secundaria">Secundaria</option>
+                    <option value="Libreria">Libreria</option>
+                    <option value="HouseOfCraft">HouseOfCraft</option>
+                    <option value="CordobaStickers">CordobaStickers</option>
+                  </select>
+                </label>
+                <div class="metric-card">
+                  <span>Costo calculado</span>
+                  <strong id="product-total-cost">$0,00</strong>
+                  <small>Se suma automáticamente según los materiales.</small>
+                </div>
+              </div>
+
+              <label class="textarea-field">
+                <span>Notas</span>
+                <textarea name="notes" rows="6" placeholder="Detalles opcionales del producto"></textarea>
+              </label>
+            </div>
+
+            <div class="line-items-block product-components-block">
+              <div class="line-items-header">
+                <div>
+                  <h4>Materiales del producto</h4>
+                  <p>Indicá qué materiales usa y en qué cantidad por unidad de producto.</p>
+                </div>
+                <button class="ghost-button" id="add-product-material" type="button">+ Agregar material</button>
+              </div>
+              <div id="product-materials-container" class="order-items-container"></div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="ghost-button" type="button" data-close-modal="product-modal">Cancelar</button>
+            <button class="primary-button" type="submit" id="product-submit-button">Guardar Producto</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="order-modal">
+      <div class="modal-card modal-large">
+        <div class="modal-header">
+          <div>
+            <p class="panel-kicker" id="order-modal-kicker">Nuevo pedido</p>
+            <h3 id="order-modal-title">Crear Pedido</h3>
+          </div>
+          <button class="icon-button close-button" type="button" data-close-modal="order-modal" aria-label="Cerrar">
+            <span>&times;</span>
+          </button>
+        </div>
+
+        <form id="order-form" class="modal-form">
+          <div class="order-modal-layout">
+            <div class="order-modal-main">
+              <div class="form-grid order-form-grid">
+                <label>
+                  <span>Fecha</span>
+                  <input type="date" name="date" required>
+                </label>
+                <label>
+                  <span>Cliente</span>
+                  <input type="text" name="client" placeholder="Nombre del cliente" required>
+                </label>
+                <label>
+                  <span>Contacto</span>
+                  <input type="text" name="contact" placeholder="Teléfono o referencia">
+                </label>
+                <label>
+                  <span>Seña / Abonado</span>
+                  <input type="number" name="paidAmount" min="0" step="0.01" value="0">
+                </label>
+                <label>
+                  <span>Medio de Pago</span>
+                  <select name="paymentMethod" required>
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Transferencia">Transferencia</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Entregado</span>
+                  <select name="delivered">
+                    <option value="0" selected>No</option>
+                    <option value="1">Sí</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Preparado</span>
+                  <select name="prepared">
+                    <option value="0" selected>No</option>
+                    <option value="1">Sí</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Fecha de entrega</span>
+                  <input type="date" name="deliveryDate">
+                </label>
+              </div>
+
+              <label class="textarea-field">
+                <span>Notas</span>
+                <textarea name="notes" rows="6" placeholder="Observaciones del pedido"></textarea>
+              </label>
+
+              <div class="order-totals-grid">
+                <label class="order-multiplier-field">
+                  <span>Multiplicador</span>
+                  <select id="order-multiplier-select" name="multiplierPreset">
+                    <option value="0.5">50%</option>
+                    <option value="1.15" selected>115%</option>
+                    <option value="custom">Otra</option>
+                  </select>
+                  <input
+                    class="hidden"
+                    id="order-multiplier-custom"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="Porcentaje personalizado"
+                  >
+                </label>
+
+                <div class="metric-card order-total-card">
+                  <span>Costo total</span>
+                  <strong id="order-total-cost">$0,00</strong>
+                </div>
+
+                <div class="metric-card order-total-card">
+                  <span>Precio total</span>
+                  <strong id="order-total-price">$0,00</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="line-items-block order-products-block">
+              <div class="line-items-header">
+                <div>
+                  <h4>Productos del pedido</h4>
+                  <p>Solo se aceptan nombres de productos existentes en la base local.</p>
+                </div>
+                <button class="ghost-button" id="add-order-item" type="button">+ Agregar producto</button>
+              </div>
+              <div id="order-items-container" class="order-items-container"></div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="ghost-button" type="button" data-close-modal="order-modal">Cancelar</button>
+            <button class="primary-button" type="submit" id="order-submit-button">Guardar Pedido</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="delete-modal">
+      <div class="modal-card modal-small">
+        <div class="modal-header">
+          <div>
+            <p class="panel-kicker">Confirmación</p>
+            <h3 id="delete-modal-title">Eliminar elemento</h3>
+          </div>
+          <button class="icon-button close-button" type="button" data-close-modal="delete-modal" aria-label="Cerrar">
+            <span>&times;</span>
+          </button>
+        </div>
+        <p class="confirm-copy" id="delete-modal-copy">
+          Esta acción no se puede deshacer.
+        </p>
+        <div class="modal-footer">
+          <button class="ghost-button" type="button" data-close-modal="delete-modal">Cancelar</button>
+          <button class="danger-button" type="button" id="confirm-delete-button">Eliminar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ink-widget">
+      <div class="ink-card hidden" id="ink-card">
+        <div class="ink-card-header">
+          <div>
+            <p class="panel-kicker">Calculadora</p>
+            <h3>Calculadora de tinta</h3>
+          </div>
+          <button class="icon-button close-button" type="button" id="close-ink-card" aria-label="Cerrar calculadora">
+            <span>&times;</span>
+          </button>
+        </div>
+
+        <div class="ink-card-body">
+          <label>
+            <span>Caras A4</span>
+            <input type="number" id="ink-a4-faces" min="0" step="1" placeholder="0">
+          </label>
+          <label>
+            <span>ml</span>
+            <input type="text" id="ink-ml-output" value="0 ml" readonly>
+          </label>
+        </div>
+      </div>
+
+      <button class="ink-fab" type="button" id="open-ink-card" aria-label="Abrir calculadora de tinta">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <rect x="8" y="10" width="32" height="44" rx="8"></rect>
+          <rect x="14" y="16" width="20" height="8" rx="3"></rect>
+          <rect x="14" y="29" width="6" height="6" rx="1.5"></rect>
+          <rect x="24" y="29" width="6" height="6" rx="1.5"></rect>
+          <rect x="14" y="39" width="6" height="6" rx="1.5"></rect>
+          <rect x="24" y="39" width="6" height="6" rx="1.5"></rect>
+          <path d="M48 18c6 8 10 13 10 19a10 10 0 1 1-20 0c0-6 4-11 10-19Z"></path>
+        </svg>
+      </button>
+    </div>
+
+    <div class="toast-stack" id="toast-stack"></div>
+
+    <script id="app-config" type="application/json">{{ config|tojson }}</script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  </body>
+</html>
