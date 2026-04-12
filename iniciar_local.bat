@@ -1,11 +1,34 @@
 @echo off
 setlocal
 set "REPO_URL=https://github.com/andresp95/hofc.git"
-cd /d "%~dp0"
+set "SCRIPT_DIR=%~dp0"
+set "REPO_DIR=%SCRIPT_DIR%"
+
+if not exist "%REPO_DIR%launch_local.py" (
+  set "REPO_DIR=%SCRIPT_DIR%hofc"
+)
+
+where git >nul 2>nul
+if %errorlevel% neq 0 (
+  echo Git no esta instalado o no esta disponible en PATH.
+  echo Instala Git y volve a ejecutar este archivo.
+  exit /b 1
+)
+
+if not exist "%REPO_DIR%\.git" (
+  echo No se detecto una copia local del proyecto.
+  echo Clonando repositorio en "%REPO_DIR%"...
+  git clone "%REPO_URL%" "%REPO_DIR%"
+  if %errorlevel% neq 0 (
+    echo No se pudo clonar el repositorio.
+    exit /b 1
+  )
+)
+
+cd /d "%REPO_DIR%"
 
 if not exist "launch_local.py" (
   echo No se encontro launch_local.py en esta carpeta.
-  echo Primero clona el proyecto con: git clone %REPO_URL%
   exit /b 1
 )
 
