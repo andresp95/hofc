@@ -71,7 +71,8 @@ class Order(db.Model):
     order_date = db.Column(db.String(10), nullable=False)
     client = db.Column(db.String(180), nullable=False)
     contact = db.Column(db.String(180), nullable=False, server_default=text("''"))
-    price_multiplier = db.Column(db.Float, nullable=False, server_default=text("1.15"))
+    price_multiplier = db.Column(db.Float, nullable=False, server_default=text("2.15"))
+    custom_total = db.Column(db.Float, nullable=True)
     paid_amount = db.Column(db.Float, nullable=False, server_default=text("0"))
     payment_method = db.Column(db.String(40), nullable=False)
     prepared = db.Column(db.Boolean, nullable=False, server_default=text("0"))
@@ -84,6 +85,10 @@ class Order(db.Model):
 
     __table_args__ = (
         CheckConstraint("price_multiplier > 0", name="ck_orders_price_multiplier_positive"),
+        CheckConstraint(
+            "custom_total IS NULL OR custom_total >= 0",
+            name="ck_orders_custom_total_nonnegative",
+        ),
         CheckConstraint("paid_amount >= 0", name="ck_orders_paid_amount_nonnegative"),
     )
 

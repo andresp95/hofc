@@ -58,6 +58,10 @@ def validate_date(value: str, field_name: str, *, required: bool) -> str:
     return value
 
 
+def parse_flag(value: object) -> int:
+    return 1 if str(value or "").strip().lower() in {"1", "true", "si", "sí", "yes"} else 0
+
+
 def material_unit_price(material: dict) -> float:
     return round(float(material["bundle_price"]) / float(material["bundle_quantity"]), 4)
 
@@ -213,13 +217,16 @@ def parse_order(payload: dict) -> dict:
     if payment_method not in ALLOWED_PAYMENT_METHODS:
         raise ValidationError("Medio de Pago: opción inválida.")
 
-    multiplier = parse_number(payload.get("multiplier", 1.15), "Multiplicador", strictly_positive=True)
+    multiplier = parse_number(payload.get("multiplier", 2.15), "Multiplicador", strictly_positive=True)
+    uses_custom_total = parse_flag(payload.get("usesCustomTotal"))
+    custom_total = (
+        round(parse_number(payload.get("customTotal", 0), "Total personalizado", minimum=0), 2)
+        if uses_custom_total
+        else None
+    )
 
-    prepared_raw = str(payload.get("prepared", "")).strip().lower()
-    prepared = 1 if prepared_raw in {"1", "true", "si", "sí", "yes"} else 0
-
-    delivered_raw = str(payload.get("delivered", "")).strip().lower()
-    delivered = 1 if delivered_raw in {"1", "true", "si", "sí", "yes"} else 0
+    prepared = parse_flag(payload.get("prepared"))
+    delivered = parse_flag(payload.get("delivered"))
 
     items_payload = payload.get("items") or []
     if not items_payload:
@@ -247,6 +254,7 @@ def parse_order(payload: dict) -> dict:
         "client": parse_text(payload.get("client"), "Cliente", required=True),
         "contact": parse_text(payload.get("contact"), "Contacto"),
         "price_multiplier": multiplier,
+        "custom_total": custom_total,
         "paid_amount": round(
             parse_number(payload.get("paidAmount", 0), "Seña / Abonado", minimum=0),
             2,
@@ -458,16 +466,17 @@ def save_order(order_id: int | None, payload: dict) -> int:
             cursor = connection.execute(
                 """
                 INSERT INTO orders (
-                    order_date, client, contact, price_multiplier, paid_amount, payment_method,
-                    prepared, delivered, delivery_date, notes
+                    order_date, client, contact, price_multiplier, custom_total, paid_amount,
+                    payment_method, prepared, delivered, delivery_date, notes
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["order_date"],
                     payload["client"],
                     payload["contact"],
                     payload["price_multiplier"],
+                    payload["custom_total"],
                     payload["paid_amount"],
                     payload["payment_method"],
                     payload["prepared"],
@@ -481,8 +490,9 @@ def save_order(order_id: int | None, payload: dict) -> int:
             cursor = connection.execute(
                 """
                 UPDATE orders
-                SET order_date = ?, client = ?, contact = ?, price_multiplier = ?, paid_amount = ?,
-                    payment_method = ?, prepared = ?, delivered = ?, delivery_date = ?, notes = ?
+                SET order_date = ?, client = ?, contact = ?, price_multiplier = ?, custom_total = ?,
+                    paid_amount = ?, payment_method = ?, prepared = ?, delivered = ?, delivery_date = ?,
+                    notes = ?
                 WHERE id = ?
                 """,
                 (
@@ -490,6 +500,7 @@ def save_order(order_id: int | None, payload: dict) -> int:
                     payload["client"],
                     payload["contact"],
                     payload["price_multiplier"],
+                    payload["custom_total"],
                     payload["paid_amount"],
                     payload["payment_method"],
                     payload["prepared"],
@@ -637,6 +648,7 @@ def fetch_orders() -> list[dict]:
             client,
             contact,
             price_multiplier,
+            custom_total,
             paid_amount,
             payment_method,
             prepared,
@@ -682,7 +694,12 @@ def fetch_orders() -> list[dict]:
     result: list[dict] = []
     for order in orders:
         items = items_by_order[order["id"]]
-        total = round(sum(item["subtotal"] for item in items), 2)
+        automatic_total = round(sum(item["subtotal"] for item in items), 2)
+        multiplier = round(float(order["price_multiplier"]), 4)
+        uses_custom_total = order["custom_total"] is not None
+        custom_total = round(float(order["custom_total"]), 2) if uses_custom_total else 0
+        total = custom_total if uses_custom_total else automatic_total
+        cost_total = round(automatic_total / multiplier, 2) if multiplier > 0 else 0
         paid_amount = round(float(order["paid_amount"]), 2)
         balance = round(total - paid_amount, 2)
 
@@ -699,7 +716,9 @@ def fetch_orders() -> list[dict]:
                 "date": order["order_date"],
                 "client": order["client"],
                 "contact": order["contact"],
-                "multiplier": round(float(order["price_multiplier"]), 4),
+                "multiplier": multiplier,
+                "usesCustomTotal": uses_custom_total,
+                "customTotal": custom_total,
                 "paidAmount": paid_amount,
                 "paymentMethod": order["payment_method"],
                 "prepared": bool(order["prepared"]),
@@ -707,6 +726,8 @@ def fetch_orders() -> list[dict]:
                 "deliveryDate": order["delivery_date"],
                 "notes": order["notes"],
                 "items": items,
+                "automaticTotal": automatic_total,
+                "costTotal": cost_total,
                 "total": total,
                 "balance": balance,
                 "statusTags": status_tags,

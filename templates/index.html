@@ -18,14 +18,17 @@
         </div>
 
         <nav class="side-nav">
-          <button class="side-link" type="button" data-section-target="pedidos">
+          <button class="side-link active" type="button" data-section-target="pedidos">
             Pedidos
           </button>
           <button class="side-link" type="button" data-section-target="productos">
             Productos
           </button>
-          <button class="side-link active" type="button" data-section-target="materiales">
+          <button class="side-link" type="button" data-section-target="materiales">
             Materiales
+          </button>
+          <button class="side-link" type="button" data-section-target="presupuestar">
+            Presupuestar
           </button>
           <button class="side-link" type="button" data-section-target="estadistica">
             Estadística
@@ -37,7 +40,7 @@
       </aside>
 
       <main class="content">
-        <section class="panel active" id="section-materiales">
+        <section class="panel" id="section-materiales">
           <div class="panel-header">
             <div>
               <h3>Materiales</h3>
@@ -46,6 +49,18 @@
               <button class="ghost-button" type="button" id="add-material-top">+ Agregar fila</button>
               <button class="primary-button" type="button" id="save-materials-top">Guardar Todo</button>
             </div>
+          </div>
+
+          <div class="products-toolbar">
+            <label class="products-search">
+              <span>Buscar material</span>
+              <input
+                type="text"
+                id="material-search-input"
+                class="table-input"
+                placeholder="Escribí un nombre para filtrar"
+              >
+            </label>
           </div>
 
           <div class="table-shell">
@@ -67,6 +82,70 @@
           <div class="panel-actions panel-actions-bottom">
             <button class="ghost-button" type="button" id="add-material-bottom">+ Agregar fila</button>
             <button class="primary-button" type="button" id="save-materials-bottom">Guardar Todo</button>
+          </div>
+        </section>
+
+        <section class="panel planner-panel" id="section-presupuestar">
+          <div class="panel-header">
+            <div>
+              <h3>Presupuestar</h3>
+            </div>
+            <div class="panel-actions">
+              <button class="ghost-button" type="button" id="reset-budget-button">Limpiar</button>
+            </div>
+          </div>
+
+          <div class="planner-layout">
+            <div class="planner-main">
+              <div class="line-items-block planner-summary-block">
+                <div class="line-items-header planner-summary-header">
+                  <div>
+                    <h4>Configuración</h4>
+                    <p>Ajustá el multiplicador y armá la cotización sin guardar cambios.</p>
+                  </div>
+                </div>
+
+                <div class="order-totals-grid planner-totals-grid">
+                  <label class="order-multiplier-field">
+                  <span>Multiplicador</span>
+                  <select id="budget-multiplier-select" name="budgetMultiplierPreset" class="table-select">
+                    <option value="1.5">150%</option>
+                    <option value="2.15" selected>215%</option>
+                    <option value="custom">Otra</option>
+                  </select>
+                  <input
+                    class="table-input hidden"
+                    id="budget-multiplier-custom"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="Porcentaje personalizado"
+                  >
+                  </label>
+
+                  <div class="metric-card order-total-card">
+                    <span>Costo total</span>
+                    <strong id="budget-total-cost">$0,00</strong>
+                  </div>
+
+                  <div class="metric-card order-total-card">
+                    <span>Total estimado</span>
+                    <strong id="budget-total-price">$0,00</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="line-items-block order-products-block planner-products-block">
+              <div class="line-items-header">
+                <div>
+                  <h4>Productos para presupuestar</h4>
+                  <p>Solo se aceptan productos existentes en la base local.</p>
+                </div>
+                <button class="ghost-button" id="add-budget-item" type="button">+ Agregar producto</button>
+              </div>
+              <div id="budget-items-container" class="order-items-container"></div>
+            </div>
           </div>
         </section>
 
@@ -110,7 +189,7 @@
           </div>
         </section>
 
-        <section class="panel" id="section-pedidos">
+        <section class="panel active" id="section-pedidos">
           <div class="panel-header">
             <div>
               <h3>Pedidos</h3>
@@ -393,15 +472,15 @@
 
               <label class="textarea-field">
                 <span>Notas</span>
-                <textarea name="notes" rows="6" placeholder="Observaciones del pedido"></textarea>
+                <textarea name="notes" rows="3" placeholder="Observaciones del pedido"></textarea>
               </label>
 
               <div class="order-totals-grid">
                 <label class="order-multiplier-field">
                   <span>Multiplicador</span>
                   <select id="order-multiplier-select" name="multiplierPreset">
-                    <option value="0.5">50%</option>
-                    <option value="1.15" selected>115%</option>
+                    <option value="1.5">150%</option>
+                    <option value="2.15" selected>215%</option>
                     <option value="custom">Otra</option>
                   </select>
                   <input
@@ -414,14 +493,32 @@
                   >
                 </label>
 
-                <div class="metric-card order-total-card">
-                  <span>Costo total</span>
-                  <strong id="order-total-cost">$0,00</strong>
-                </div>
+                <label class="order-total-mode-field">
+                  <span>Total</span>
+                  <select id="order-total-mode-select" name="totalMode">
+                    <option value="automatic" selected>Automático</option>
+                    <option value="custom">Personalizado</option>
+                  </select>
+                  <input
+                    class="hidden"
+                    id="order-custom-total-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Ingresá el total final"
+                  >
+                </label>
 
-                <div class="metric-card order-total-card">
-                  <span>Precio total</span>
-                  <strong id="order-total-price">$0,00</strong>
+                <div class="order-totals-stack">
+                  <div class="metric-card order-total-card">
+                    <span>Costo total</span>
+                    <strong id="order-total-cost">$0,00</strong>
+                  </div>
+
+                  <div class="metric-card order-total-card">
+                    <span>Total final</span>
+                    <strong id="order-total-price">$0,00</strong>
+                  </div>
                 </div>
               </div>
             </div>

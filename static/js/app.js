@@ -4,6 +4,7 @@ const state = {
   materials: [],
   products: [],
   orders: [],
+  materialSearchTerm: "",
   selectedProductCategories: new Set(["Todos"]),
   productSearchTerm: "",
   orderSearchTerm: "",
@@ -24,6 +25,7 @@ const dom = {
   sectionButtons: document.querySelectorAll("[data-section-target]"),
   sections: document.querySelectorAll(".panel"),
   materialsBody: document.getElementById("materials-table-body"),
+  materialSearchInput: document.getElementById("material-search-input"),
   productsBody: document.getElementById("products-table-body"),
   ordersBody: document.getElementById("orders-table-body"),
   productCategoryPills: document.getElementById("product-category-pills"),
@@ -67,8 +69,15 @@ const dom = {
   orderSubmitButton: document.getElementById("order-submit-button"),
   orderMultiplierSelect: document.getElementById("order-multiplier-select"),
   orderMultiplierCustom: document.getElementById("order-multiplier-custom"),
+  orderTotalModeSelect: document.getElementById("order-total-mode-select"),
+  orderCustomTotalInput: document.getElementById("order-custom-total-input"),
   orderTotalCost: document.getElementById("order-total-cost"),
   orderTotalPrice: document.getElementById("order-total-price"),
+  budgetItemsContainer: document.getElementById("budget-items-container"),
+  budgetMultiplierSelect: document.getElementById("budget-multiplier-select"),
+  budgetMultiplierCustom: document.getElementById("budget-multiplier-custom"),
+  budgetTotalCost: document.getElementById("budget-total-cost"),
+  budgetTotalPrice: document.getElementById("budget-total-price"),
   inkCard: document.getElementById("ink-card"),
   openInkCard: document.getElementById("open-ink-card"),
   closeInkCard: document.getElementById("close-ink-card"),
@@ -94,6 +103,11 @@ function bindEvents() {
   document.getElementById("add-material-bottom").addEventListener("click", addMaterialRow);
   document.getElementById("save-materials-top").addEventListener("click", saveMaterials);
   document.getElementById("save-materials-bottom").addEventListener("click", saveMaterials);
+
+  dom.materialSearchInput.addEventListener("input", (event) => {
+    state.materialSearchTerm = event.target.value.trim().toLocaleLowerCase();
+    applyMaterialFilter();
+  });
 
   document.getElementById("create-product-button").addEventListener("click", () => {
     if (!state.materials.length) {
@@ -181,6 +195,9 @@ function bindEvents() {
     const row = event.target.closest("tr");
     if (row) {
       updateMaterialUnitPrice(row);
+      if (event.target.name === "name") {
+        applyMaterialFilter();
+      }
     }
   });
 
@@ -254,6 +271,8 @@ function bindEvents() {
 
   document.getElementById("add-product-material").addEventListener("click", () => addProductMaterialRow());
   document.getElementById("add-order-item").addEventListener("click", () => addOrderItemRow());
+  document.getElementById("add-budget-item").addEventListener("click", () => addBudgetItemRow());
+  document.getElementById("reset-budget-button").addEventListener("click", resetBudgetPlanner);
 
   dom.productMaterialsContainer.addEventListener("click", (event) => {
     const option = event.target.closest("[data-material-option]");
@@ -305,6 +324,17 @@ function bindEvents() {
   });
 
   dom.orderItemsContainer.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-product-option]");
+    if (option) {
+      event.preventDefault();
+      const row = option.closest(".order-item-row");
+      const product = state.products.find((entry) => entry.id === Number(option.dataset.productOption));
+      if (row && product) {
+        selectProductForRow(row, product, updateOrderModalTotals);
+      }
+      return;
+    }
+
     const removeButton = event.target.closest("[data-remove-order-item]");
     if (!removeButton) {
       return;
@@ -320,8 +350,60 @@ function bindEvents() {
   dom.orderItemsContainer.addEventListener("input", (event) => {
     const row = event.target.closest(".order-item-row");
     if (row) {
+      if (event.target.name === "productName") {
+        renderProductDropdown(row, true);
+      }
       updateOrderItemSummary(row);
       updateOrderModalTotals();
+    }
+  });
+
+  dom.orderItemsContainer.addEventListener("focusin", (event) => {
+    const row = event.target.closest(".order-item-row");
+    if (row && event.target.name === "productName") {
+      renderProductDropdown(row, true);
+    }
+  });
+
+  dom.budgetItemsContainer.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-product-option]");
+    if (option) {
+      event.preventDefault();
+      const row = option.closest(".order-item-row");
+      const product = state.products.find((entry) => entry.id === Number(option.dataset.productOption));
+      if (row && product) {
+        selectProductForRow(row, product, updateBudgetTotals);
+      }
+      return;
+    }
+
+    const removeButton = event.target.closest("[data-remove-order-item]");
+    if (!removeButton) {
+      return;
+    }
+
+    removeButton.closest(".order-item-row")?.remove();
+    if (!dom.budgetItemsContainer.children.length) {
+      addBudgetItemRow();
+    }
+    updateBudgetTotals();
+  });
+
+  dom.budgetItemsContainer.addEventListener("input", (event) => {
+    const row = event.target.closest(".order-item-row");
+    if (row) {
+      if (event.target.name === "productName") {
+        renderProductDropdown(row, true);
+      }
+      updateOrderItemSummary(row);
+      updateBudgetTotals();
+    }
+  });
+
+  dom.budgetItemsContainer.addEventListener("focusin", (event) => {
+    const row = event.target.closest(".order-item-row");
+    if (row && event.target.name === "productName") {
+      renderProductDropdown(row, true);
     }
   });
 
@@ -332,6 +414,24 @@ function bindEvents() {
 
   dom.orderMultiplierCustom.addEventListener("input", () => {
     refreshOpenOrderItemRows();
+  });
+
+  dom.orderTotalModeSelect.addEventListener("change", () => {
+    syncOrderCustomTotalVisibility();
+    updateOrderModalTotals();
+  });
+
+  dom.orderCustomTotalInput.addEventListener("input", () => {
+    updateOrderModalTotals();
+  });
+
+  dom.budgetMultiplierSelect.addEventListener("change", () => {
+    syncBudgetMultiplierVisibility();
+    updateBudgetTotals();
+  });
+
+  dom.budgetMultiplierCustom.addEventListener("input", () => {
+    updateBudgetTotals();
   });
 
   dom.openInkCard.addEventListener("click", () => {
@@ -362,6 +462,7 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeAllMaterialDropdowns();
+      closeAllProductDropdowns();
       closeModal(dom.productModal);
       closeModal(dom.orderModal);
       closeModal(dom.deleteModal);
@@ -372,6 +473,9 @@ function bindEvents() {
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".material-combobox")) {
       closeAllMaterialDropdowns();
+    }
+    if (!event.target.closest(".product-combobox")) {
+      closeAllProductDropdowns();
     }
     if (!event.target.closest(".ink-widget")) {
       dom.inkCard.classList.add("hidden");
@@ -397,6 +501,7 @@ async function loadAllData() {
     renderCalendar();
     renderProductCategoryPills();
     renderProductOptions();
+    resetBudgetPlanner();
     updateStats();
     updateInkCalculator();
   } catch (error) {
@@ -418,6 +523,16 @@ function renderMaterials() {
   const rows = state.materials.length ? state.materials : [createEmptyMaterial()];
   dom.materialsBody.innerHTML = rows.map((material) => materialRowTemplate(material)).join("");
   Array.from(dom.materialsBody.querySelectorAll("tr")).forEach(updateMaterialUnitPrice);
+  applyMaterialFilter();
+}
+
+function applyMaterialFilter() {
+  const searchTerm = state.materialSearchTerm;
+  Array.from(dom.materialsBody.querySelectorAll("tr")).forEach((row) => {
+    const nameInput = row.querySelector('[name="name"]');
+    const name = nameInput?.value.trim().toLocaleLowerCase() || "";
+    row.classList.toggle("hidden", Boolean(searchTerm) && !name.includes(searchTerm));
+  });
 }
 
 function renderProducts() {
@@ -796,12 +911,8 @@ function calculateStatsTotals(orders) {
 }
 
 function calculateOrderCost(order) {
-  const total = Number(order.total || 0);
-  const multiplier = Number(order.multiplier || 0);
-  if (!Number.isFinite(total) || !Number.isFinite(multiplier) || multiplier <= 0) {
-    return 0;
-  }
-  return total / multiplier;
+  const cost = Number(order.costTotal || 0);
+  return Number.isFinite(cost) ? cost : 0;
 }
 
 function calculateMetricValue(order, metric) {
@@ -988,6 +1099,7 @@ function addMaterialRow() {
   const newRow = dom.materialsBody.lastElementChild;
   if (newRow) {
     updateMaterialUnitPrice(newRow);
+    applyMaterialFilter();
     newRow.querySelector('[name="name"]')?.focus();
   }
 }
@@ -1014,6 +1126,7 @@ async function saveMaterials() {
     updateStats();
     refreshOpenProductMaterialRows();
     refreshOpenOrderItemRows();
+    refreshBudgetItemRows();
     showToast("Materiales guardados.", "success");
   } catch (error) {
     showToast(error.message, "error");
@@ -1225,6 +1338,7 @@ async function submitProductForm(event) {
     renderProductOptions();
     updateStats();
     refreshOpenOrderItemRows();
+    refreshBudgetItemRows();
     closeModal(dom.productModal);
     showToast(isEditing ? "Producto actualizado." : "Producto creado.", "success");
   } catch (error) {
@@ -1276,7 +1390,8 @@ function openOrderModal(order = null) {
   dom.orderForm.elements.delivered.value = order?.delivered ? "1" : "0";
   dom.orderForm.elements.deliveryDate.value = order?.deliveryDate || "";
   dom.orderForm.elements.notes.value = order?.notes || "";
-  setOrderMultiplier(order?.multiplier ?? 1.15);
+  setOrderMultiplier(order?.multiplier ?? 2.15);
+  setOrderCustomTotal(order?.usesCustomTotal, order?.customTotal);
 
   if (order?.items?.length) {
     order.items.forEach((item) => addOrderItemRow(item));
@@ -1298,12 +1413,79 @@ function addOrderItemRow(item = null) {
   }
 }
 
+function addBudgetItemRow(item = null) {
+  dom.budgetItemsContainer.insertAdjacentHTML("beforeend", orderItemTemplate(item));
+  const row = dom.budgetItemsContainer.lastElementChild;
+  if (row) {
+    updateOrderItemSummary(row);
+    updateBudgetTotals();
+    row.querySelector('[name="productName"]')?.focus();
+  }
+}
+
 function refreshOpenOrderItemRows() {
   if (dom.orderModal.classList.contains("hidden")) {
     return;
   }
-  dom.orderItemsContainer.querySelectorAll(".order-item-row").forEach(updateOrderItemSummary);
-  updateOrderModalTotals();
+  refreshItemSummaries(dom.orderItemsContainer, updateOrderModalTotals);
+}
+
+function refreshBudgetItemRows() {
+  refreshItemSummaries(dom.budgetItemsContainer, updateBudgetTotals);
+}
+
+function refreshItemSummaries(container, afterRefresh) {
+  container.querySelectorAll(".order-item-row").forEach(updateOrderItemSummary);
+  afterRefresh();
+}
+
+function resetBudgetPlanner() {
+  dom.budgetItemsContainer.innerHTML = "";
+  setBudgetMultiplier(2.15);
+  addBudgetItemRow();
+  updateBudgetTotals();
+}
+
+function updateBudgetTotals() {
+  updatePricingSummary({
+    itemsContainer: dom.budgetItemsContainer,
+    multiplierSelect: dom.budgetMultiplierSelect,
+    multiplierCustom: dom.budgetMultiplierCustom,
+    totalCostNode: dom.budgetTotalCost,
+    totalPriceNode: dom.budgetTotalPrice,
+  });
+}
+
+function updatePricingSummary({
+  itemsContainer,
+  multiplierSelect,
+  multiplierCustom,
+  totalCostNode,
+  totalPriceNode,
+  totalModeSelect = null,
+  customTotalInput = null,
+}) {
+  const costTotal = calculateItemsCostTotal(itemsContainer);
+  const multiplier = getMultiplierValue(multiplierSelect, multiplierCustom);
+  const automaticTotal = Number.isFinite(multiplier) && multiplier > 0 ? costTotal * multiplier : 0;
+  const total =
+    totalModeSelect?.value === "custom"
+      ? getCustomTotalValue(customTotalInput)
+      : automaticTotal;
+
+  totalCostNode.textContent = formatMoney(costTotal);
+  totalPriceNode.textContent = formatMoney(total);
+}
+
+function calculateItemsCostTotal(container) {
+  return Array.from(container.querySelectorAll(".order-item-row")).reduce((accumulator, row) => {
+    const product = findProductByName(row.querySelector('[name="productName"]').value.trim());
+    const quantity = Number.parseFloat(row.querySelector('[name="quantity"]').value);
+    if (!product || !Number.isFinite(quantity) || quantity <= 0) {
+      return accumulator;
+    }
+    return accumulator + product.price * quantity;
+  }, 0);
 }
 
 async function submitOrderForm(event) {
@@ -1316,6 +1498,8 @@ async function submitOrderForm(event) {
       client: dom.orderForm.elements.client.value.trim(),
       contact: dom.orderForm.elements.contact.value.trim(),
       multiplier: collectOrderMultiplier(),
+      usesCustomTotal: dom.orderTotalModeSelect.value === "custom",
+      customTotal: dom.orderCustomTotalInput.value,
       paidAmount: dom.orderForm.elements.paidAmount.value,
       paymentMethod: dom.orderForm.elements.paymentMethod.value,
       prepared: dom.orderForm.elements.prepared.value,
@@ -1393,16 +1577,82 @@ function updateOrderItemSummary(row) {
   summary.textContent = formatMoney(product.price * quantity);
 }
 
+function renderProductDropdown(row, shouldOpen) {
+  const menu = row.querySelector("[data-product-menu]");
+  const input = row.querySelector('[name="productName"]');
+  if (!menu || !input) {
+    return;
+  }
+
+  closeAllProductDropdowns(row);
+
+  if (!shouldOpen) {
+    menu.classList.add("hidden");
+    return;
+  }
+
+  const query = input.value.trim().toLocaleLowerCase();
+  const matches = state.products
+    .filter((product) => !query || product.name.toLocaleLowerCase().includes(query))
+    .slice(0, 12);
+
+  menu.innerHTML = matches.length
+    ? matches
+        .map(
+          (product) => `
+            <button
+              class="material-option"
+              type="button"
+              data-product-option="${product.id}"
+            >
+              <span>${escapeHtml(product.name)}</span>
+              <small>${formatMoney(product.price)}</small>
+            </button>
+          `
+        )
+        .join("")
+    : `<div class="material-option-empty">Sin coincidencias</div>`;
+
+  menu.classList.remove("hidden");
+}
+
+function selectProductForRow(row, product, onSelect) {
+  const input = row.querySelector('[name="productName"]');
+  if (!input) {
+    return;
+  }
+
+  input.value = product.name;
+  updateOrderItemSummary(row);
+  onSelect();
+  renderProductDropdown(row, false);
+}
+
+function closeAllProductDropdowns(exceptRow = null) {
+  [dom.orderItemsContainer, dom.budgetItemsContainer].forEach((container) => {
+    container.querySelectorAll("[data-product-menu]").forEach((menu) => {
+      if (exceptRow && exceptRow.contains(menu)) {
+        return;
+      }
+      menu.classList.add("hidden");
+    });
+  });
+}
+
 function getOrderMultiplierValue() {
-  if (dom.orderMultiplierSelect.value === "custom") {
-    const customPercent = Number.parseFloat(dom.orderMultiplierCustom.value);
+  return getMultiplierValue(dom.orderMultiplierSelect, dom.orderMultiplierCustom);
+}
+
+function getMultiplierValue(select, customInput) {
+  if (select.value === "custom") {
+    const customPercent = Number.parseFloat(customInput.value);
     if (!Number.isFinite(customPercent) || customPercent <= 0) {
       return 0;
     }
     return customPercent / 100;
   }
 
-  return Number.parseFloat(dom.orderMultiplierSelect.value) || 0;
+  return Number.parseFloat(select.value) || 0;
 }
 
 function collectOrderMultiplier() {
@@ -1414,41 +1664,68 @@ function collectOrderMultiplier() {
 }
 
 function setOrderMultiplier(multiplier) {
-  const normalized = Number.parseFloat(multiplier);
-  if (Math.abs(normalized - 0.5) < 0.0001) {
-    dom.orderMultiplierSelect.value = "0.5";
-    dom.orderMultiplierCustom.value = "";
-  } else if (Math.abs(normalized - 1.15) < 0.0001) {
-    dom.orderMultiplierSelect.value = "1.15";
-    dom.orderMultiplierCustom.value = "";
-  } else {
-    dom.orderMultiplierSelect.value = "custom";
-    dom.orderMultiplierCustom.value = String(roundTo(normalized * 100, 2));
-  }
-
+  setMultiplierControls(dom.orderMultiplierSelect, dom.orderMultiplierCustom, multiplier);
   syncOrderMultiplierVisibility();
 }
 
+function setBudgetMultiplier(multiplier) {
+  setMultiplierControls(dom.budgetMultiplierSelect, dom.budgetMultiplierCustom, multiplier);
+  syncBudgetMultiplierVisibility();
+}
+
+function setMultiplierControls(select, customInput, multiplier) {
+  const normalized = Number.parseFloat(multiplier);
+  if (Math.abs(normalized - 1.5) < 0.0001) {
+    select.value = "1.5";
+    customInput.value = "";
+  } else if (Math.abs(normalized - 2.15) < 0.0001) {
+    select.value = "2.15";
+    customInput.value = "";
+  } else {
+    select.value = "custom";
+    customInput.value = String(roundTo(normalized * 100, 2));
+  }
+}
+
 function syncOrderMultiplierVisibility() {
-  const isCustom = dom.orderMultiplierSelect.value === "custom";
-  dom.orderMultiplierCustom.classList.toggle("hidden", !isCustom);
+  syncMultiplierVisibility(dom.orderMultiplierSelect, dom.orderMultiplierCustom);
+}
+
+function syncBudgetMultiplierVisibility() {
+  syncMultiplierVisibility(dom.budgetMultiplierSelect, dom.budgetMultiplierCustom);
+}
+
+function syncMultiplierVisibility(select, customInput) {
+  const isCustom = select.value === "custom";
+  customInput.classList.toggle("hidden", !isCustom);
+}
+
+function setOrderCustomTotal(usesCustomTotal, customTotal) {
+  dom.orderTotalModeSelect.value = usesCustomTotal ? "custom" : "automatic";
+  dom.orderCustomTotalInput.value = usesCustomTotal ? String(roundTo(customTotal || 0, 2)) : "";
+  syncOrderCustomTotalVisibility();
+}
+
+function syncOrderCustomTotalVisibility() {
+  const isCustom = dom.orderTotalModeSelect.value === "custom";
+  dom.orderCustomTotalInput.classList.toggle("hidden", !isCustom);
+}
+
+function getCustomTotalValue(input) {
+  const value = Number.parseFloat(input?.value);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 function updateOrderModalTotals() {
-  const costTotal = Array.from(dom.orderItemsContainer.querySelectorAll(".order-item-row")).reduce((accumulator, row) => {
-    const product = findProductByName(row.querySelector('[name="productName"]').value.trim());
-    const quantity = Number.parseFloat(row.querySelector('[name="quantity"]').value);
-    if (!product || !Number.isFinite(quantity) || quantity <= 0) {
-      return accumulator;
-    }
-    return accumulator + product.price * quantity;
-  }, 0);
-
-  const multiplier = getOrderMultiplierValue();
-  const priceTotal = Number.isFinite(multiplier) && multiplier > 0 ? costTotal * multiplier : 0;
-
-  dom.orderTotalCost.textContent = formatMoney(costTotal);
-  dom.orderTotalPrice.textContent = formatMoney(priceTotal);
+  updatePricingSummary({
+    itemsContainer: dom.orderItemsContainer,
+    multiplierSelect: dom.orderMultiplierSelect,
+    multiplierCustom: dom.orderMultiplierCustom,
+    totalCostNode: dom.orderTotalCost,
+    totalPriceNode: dom.orderTotalPrice,
+    totalModeSelect: dom.orderTotalModeSelect,
+    customTotalInput: dom.orderCustomTotalInput,
+  });
 }
 
 function roundTo(value, digits) {
@@ -1479,6 +1756,7 @@ async function confirmDelete() {
       renderProducts();
       renderProductOptions();
       refreshOpenOrderItemRows();
+      refreshBudgetItemRows();
       showToast("Producto eliminado.", "success");
     } else {
       state.orders = await fetchJson("/api/orders");
@@ -1521,6 +1799,7 @@ function closeModal(modal) {
   }
   if (modal === dom.orderModal) {
     state.editingOrderId = null;
+    closeAllProductDropdowns();
   }
   if (modal === dom.deleteModal) {
     state.pendingDelete = null;
@@ -1624,17 +1903,22 @@ function orderItemTemplate(item) {
     <div class="order-item-row" data-product-id="${item?.productId ?? ""}">
       <label>
         <span>Producto</span>
-        <input
-          type="text"
-          name="productName"
-          list="product-options"
-          value="${escapeAttribute(item?.productName || "")}"
-          placeholder="Elegí un producto cargado"
-        >
+        <div class="product-combobox">
+          <input
+            class="table-input"
+            type="text"
+            name="productName"
+            autocomplete="off"
+            value="${escapeAttribute(item?.productName || "")}"
+            placeholder="Elegí un producto cargado"
+          >
+          <div class="material-dropdown hidden" data-product-menu></div>
+        </div>
       </label>
       <label>
         <span>Cantidad</span>
         <input
+          class="table-input"
           type="number"
           min="0.0001"
           step="0.0001"
