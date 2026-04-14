@@ -558,6 +558,29 @@ button {
   color: var(--accent-deep);
 }
 
+.sort-header-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+}
+
+.sort-header-button.active {
+  color: var(--accent-strong);
+}
+
+.sort-header-indicator {
+  min-width: 1ch;
+  color: var(--accent-strong);
+  opacity: 0.85;
+}
+
 .data-table tr:last-child td {
   border-bottom: none;
 }
@@ -585,6 +608,37 @@ button {
 .orders-table tbody tr.order-row-urgent td:last-child {
   border-top-right-radius: 16px;
   border-bottom-right-radius: 16px;
+}
+
+.orders-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.orders-pagination-summary,
+.orders-pagination-info {
+  color: var(--muted);
+}
+
+.orders-pagination-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.orders-pagination .ghost-button {
+  padding: 10px 14px;
+}
+
+.orders-pagination .ghost-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
 }
 
 .table-input,

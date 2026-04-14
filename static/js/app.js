@@ -11,6 +11,10 @@ const state = {
   orderDateFrom: "",
   orderDateTo: "",
   orderDeliveryFilter: "all",
+  orderSortKey: "deliveryDate",
+  orderSortDirection: "asc",
+  orderPageSize: 50,
+  orderCurrentPage: 1,
   statsDateFrom: "",
   statsDateTo: "",
   statsMetric: "collected",
@@ -34,6 +38,7 @@ const dom = {
   orderDateFrom: document.getElementById("order-date-from"),
   orderDateTo: document.getElementById("order-date-to"),
   orderDeliveryFilter: document.getElementById("order-delivery-filter"),
+  orderSortButtons: document.querySelectorAll("[data-order-sort]"),
   statsDateFrom: document.getElementById("stats-date-from"),
   statsDateTo: document.getElementById("stats-date-to"),
   statsMetricCards: document.querySelectorAll("[data-stat-metric]"),
@@ -48,6 +53,11 @@ const dom = {
   bulkOrderStatus: document.getElementById("bulk-order-status"),
   applyBulkOrderStatus: document.getElementById("apply-bulk-order-status"),
   selectAllOrders: document.getElementById("select-all-orders"),
+  ordersPagination: document.getElementById("orders-pagination"),
+  ordersPaginationSummary: document.getElementById("orders-pagination-summary"),
+  ordersPaginationInfo: document.getElementById("orders-pagination-info"),
+  ordersPrevPage: document.getElementById("orders-prev-page"),
+  ordersNextPage: document.getElementById("orders-next-page"),
   calendarPrevMonth: document.getElementById("calendar-prev-month"),
   calendarNextMonth: document.getElementById("calendar-next-month"),
   calendarMonthLabel: document.getElementById("calendar-month-label"),
@@ -142,22 +152,32 @@ function bindEvents() {
 
   dom.orderSearchInput.addEventListener("input", (event) => {
     state.orderSearchTerm = event.target.value.trim().toLocaleLowerCase();
+    resetOrdersPagination();
     renderOrders();
   });
 
   dom.orderDateFrom.addEventListener("change", (event) => {
     state.orderDateFrom = event.target.value;
+    resetOrdersPagination();
     renderOrders();
   });
 
   dom.orderDateTo.addEventListener("change", (event) => {
     state.orderDateTo = event.target.value;
+    resetOrdersPagination();
     renderOrders();
   });
 
   dom.orderDeliveryFilter.addEventListener("change", (event) => {
     state.orderDeliveryFilter = event.target.value;
+    resetOrdersPagination();
     renderOrders();
+  });
+
+  dom.orderSortButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      toggleOrderSort(button.dataset.orderSort);
+    });
   });
 
   dom.statsDateFrom.addEventListener("change", (event) => {
@@ -187,6 +207,8 @@ function bindEvents() {
 
   dom.applyBulkOrderStatus.addEventListener("click", applyBulkOrderStatus);
   dom.selectAllOrders.addEventListener("change", toggleSelectAllVisibleOrders);
+  dom.ordersPrevPage.addEventListener("click", () => changeOrdersPage(-1));
+  dom.ordersNextPage.addEventListener("click", () => changeOrdersPage(1));
 
   dom.calendarPrevMonth.addEventListener("click", () => shiftCalendarMonth(-1));
   dom.calendarNextMonth.addEventListener("click", () => shiftCalendarMonth(1));
@@ -645,7 +667,9 @@ function renderProductCategoryPills() {
 function renderOrders() {
   if (!state.orders.length) {
     state.selectedOrderIds.clear();
-    syncBulkOrdersToolbar();
+    syncBulkOrdersToolbar([]);
+    renderOrdersPagination([], 0);
+    renderOrderSortButtons();
     dom.ordersBody.innerHTML = `
       <tr>
         <td colspan="10" class="empty-state">Todavía no hay pedidos cargados.</td>
@@ -654,10 +678,14 @@ function renderOrders() {
     return;
   }
 
-  const visibleOrders = sortOrdersByDelivery(getFilteredOrders());
+  const filteredOrders = getFilteredOrders();
+  const sortedOrders = getSortedOrders(filteredOrders);
+  const visibleOrders = getPaginatedOrders(sortedOrders);
+  renderOrderSortButtons();
 
-  if (!visibleOrders.length) {
-    syncBulkOrdersToolbar();
+  if (!sortedOrders.length) {
+    syncBulkOrdersToolbar([]);
+    renderOrdersPagination([], 0);
     dom.ordersBody.innerHTML = `
       <tr>
         <td colspan="10" class="empty-state">No hay pedidos que coincidan con los filtros actuales.</td>
@@ -728,9 +756,10 @@ function renderOrders() {
     .join("");
 
   syncBulkOrdersToolbar(visibleOrders);
+  renderOrdersPagination(sortedOrders, visibleOrders.length);
 }
 
-function syncBulkOrdersToolbar(visibleOrders = getFilteredOrders()) {
+function syncBulkOrdersToolbar(visibleOrders = getCurrentOrdersPage()) {
   const selectedCount = state.selectedOrderIds.size;
   dom.bulkOrdersToolbar.classList.toggle("hidden", selectedCount === 0);
   dom.bulkOrdersCount.textContent = `${selectedCount} ${selectedCount === 1 ? "seleccionado" : "seleccionados"}`;
@@ -742,7 +771,7 @@ function syncBulkOrdersToolbar(visibleOrders = getFilteredOrders()) {
 }
 
 function toggleSelectAllVisibleOrders() {
-  const visibleOrders = getFilteredOrders();
+  const visibleOrders = getCurrentOrdersPage();
   if (dom.selectAllOrders.checked) {
     visibleOrders.forEach((order) => state.selectedOrderIds.add(order.id));
   } else {
@@ -2032,34 +2061,68 @@ function getDaysUntil(value) {
   return Math.floor(diffMs / 86400000);
 }
 
-function sortOrdersByDelivery(orders) {
-  return [...orders].sort((left, right) => {
-    const leftHasDelivery = Boolean(left.deliveryDate);
-    const rightHasDelivery = Boolean(right.deliveryDate);
+function getSortedOrders(orders) {
+  return [...orders].sort((left, right) => compareOrders(left, right));
+}
 
-    if (leftHasDelivery && rightHasDelivery && left.deliveryDate !== right.deliveryDate) {
-      return left.deliveryDate.localeCompare(right.deliveryDate);
+function getCurrentOrdersPage() {
+  return getPaginatedOrders(getSortedOrders(getFilteredOrders()));
+}
+
+function getPaginatedOrders(orders) {
+  const totalPages = Math.max(1, Math.ceil(orders.length / state.orderPageSize));
+  state.orderCurrentPage = Math.min(state.orderCurrentPage, totalPages);
+  const startIndex = (state.orderCurrentPage - 1) * state.orderPageSize;
+  return orders.slice(startIndex, startIndex + state.orderPageSize);
+}
+
+function compareOrders(left, right) {
+  if (state.orderSortKey === "deliveryDate") {
+    return compareOrdersByDelivery(left, right);
+  }
+
+  const directionMultiplier = state.orderSortDirection === "asc" ? 1 : -1;
+  const result = compareOrderValues(getOrderSortValue(left, state.orderSortKey), getOrderSortValue(right, state.orderSortKey));
+
+  if (result !== 0) {
+    return result * directionMultiplier;
+  }
+
+  const dateResult = compareOrderValues(left.date, right.date);
+  if (dateResult !== 0) {
+    return dateResult;
+  }
+
+  return left.id - right.id;
+}
+
+function compareOrdersByDelivery(left, right) {
+  const leftHasDelivery = Boolean(left.deliveryDate);
+  const rightHasDelivery = Boolean(right.deliveryDate);
+  const directionMultiplier = state.orderSortDirection === "asc" ? 1 : -1;
+
+  if (leftHasDelivery && rightHasDelivery && left.deliveryDate !== right.deliveryDate) {
+    return left.deliveryDate.localeCompare(right.deliveryDate) * directionMultiplier;
+  }
+
+  if (leftHasDelivery !== rightHasDelivery) {
+    return leftHasDelivery ? -1 : 1;
+  }
+
+  if (!leftHasDelivery && !rightHasDelivery) {
+    const leftStatusPriority = getOrderStatusSortPriority(left);
+    const rightStatusPriority = getOrderStatusSortPriority(right);
+
+    if (leftStatusPriority !== rightStatusPriority) {
+      return leftStatusPriority - rightStatusPriority;
     }
+  }
 
-    if (leftHasDelivery !== rightHasDelivery) {
-      return leftHasDelivery ? -1 : 1;
-    }
+  if (left.date !== right.date) {
+    return left.date.localeCompare(right.date);
+  }
 
-    if (!leftHasDelivery && !rightHasDelivery) {
-      const leftStatusPriority = getOrderStatusSortPriority(left);
-      const rightStatusPriority = getOrderStatusSortPriority(right);
-
-      if (leftStatusPriority !== rightStatusPriority) {
-        return leftStatusPriority - rightStatusPriority;
-      }
-    }
-
-    if (left.date !== right.date) {
-      return left.date.localeCompare(right.date);
-    }
-
-    return left.id - right.id;
-  });
+  return left.id - right.id;
 }
 
 function getOrderStatusSortPriority(order) {
@@ -2070,6 +2133,112 @@ function getOrderStatusSortPriority(order) {
     return 1;
   }
   return 0;
+}
+
+function getOrderSortValue(order, key) {
+  if (key === "date") {
+    return order.date;
+  }
+  if (key === "client") {
+    return order.client;
+  }
+  if (key === "contact") {
+    return order.contact;
+  }
+  if (key === "products") {
+    return order.items.map((item) => item.productName).join(" ");
+  }
+  if (key === "total") {
+    return Number(order.total || 0);
+  }
+  if (key === "balance") {
+    return Number(order.balance || 0);
+  }
+  if (key === "status") {
+    return getOrderStatusSortPriority(order);
+  }
+  return "";
+}
+
+function compareOrderValues(left, right) {
+  const leftEmpty = left == null || left === "";
+  const rightEmpty = right == null || right === "";
+
+  if (leftEmpty && rightEmpty) {
+    return 0;
+  }
+  if (leftEmpty) {
+    return 1;
+  }
+  if (rightEmpty) {
+    return -1;
+  }
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+  return String(left).localeCompare(String(right), "es-AR", {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function toggleOrderSort(sortKey) {
+  if (state.orderSortKey === sortKey) {
+    state.orderSortDirection = state.orderSortDirection === "asc" ? "desc" : "asc";
+  } else {
+    state.orderSortKey = sortKey;
+    state.orderSortDirection = "asc";
+  }
+  resetOrdersPagination();
+  renderOrders();
+}
+
+function renderOrderSortButtons() {
+  dom.orderSortButtons.forEach((button) => {
+    const isActive = button.dataset.orderSort === state.orderSortKey;
+    const indicator = button.querySelector(".sort-header-indicator");
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+    button.closest("th")?.setAttribute(
+      "aria-sort",
+      isActive ? (state.orderSortDirection === "asc" ? "ascending" : "descending") : "none"
+    );
+    if (indicator) {
+      indicator.textContent = isActive ? (state.orderSortDirection === "asc" ? "^" : "v") : "";
+    }
+  });
+}
+
+function renderOrdersPagination(sortedOrders, visibleCount) {
+  const totalOrders = sortedOrders.length;
+  const totalPages = Math.max(1, Math.ceil(totalOrders / state.orderPageSize));
+  const startItem = totalOrders ? (state.orderCurrentPage - 1) * state.orderPageSize + 1 : 0;
+  const endItem = totalOrders ? startItem + visibleCount - 1 : 0;
+
+  dom.ordersPagination.classList.toggle("hidden", totalOrders <= state.orderPageSize);
+  dom.ordersPaginationSummary.textContent = totalOrders
+    ? `Mostrando ${startItem}-${endItem} de ${totalOrders} pedidos`
+    : "Sin pedidos para mostrar";
+  dom.ordersPaginationInfo.textContent = `Pagina ${state.orderCurrentPage} de ${totalPages}`;
+  dom.ordersPrevPage.disabled = state.orderCurrentPage <= 1;
+  dom.ordersNextPage.disabled = state.orderCurrentPage >= totalPages;
+}
+
+function changeOrdersPage(delta) {
+  const totalOrders = getSortedOrders(getFilteredOrders()).length;
+  const totalPages = Math.max(1, Math.ceil(totalOrders / state.orderPageSize));
+  const nextPage = Math.min(Math.max(state.orderCurrentPage + delta, 1), totalPages);
+
+  if (nextPage === state.orderCurrentPage) {
+    return;
+  }
+
+  state.orderCurrentPage = nextPage;
+  renderOrders();
+}
+
+function resetOrdersPagination() {
+  state.orderCurrentPage = 1;
 }
 
 function getOrderDeliveryUrgencyClass(order) {

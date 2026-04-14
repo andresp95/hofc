@@ -241,14 +241,54 @@
             <table class="data-table orders-table">
               <thead>
                 <tr>
-                  <th>Fecha</th>
-                  <th>Cliente</th>
-                  <th>Contacto</th>
-                  <th>Productos</th>
-                  <th>Total</th>
-                  <th>Saldo</th>
-                  <th>Estado</th>
-                  <th>Entrega</th>
+                  <th>
+                    <button class="sort-header-button" type="button" data-order-sort="date">
+                      <span>Fecha</span>
+                      <span class="sort-header-indicator"></span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="sort-header-button" type="button" data-order-sort="client">
+                      <span>Cliente</span>
+                      <span class="sort-header-indicator"></span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="sort-header-button" type="button" data-order-sort="contact">
+                      <span>Contacto</span>
+                      <span class="sort-header-indicator"></span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="sort-header-button" type="button" data-order-sort="products">
+                      <span>Productos</span>
+                      <span class="sort-header-indicator"></span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="sort-header-button" type="button" data-order-sort="total">
+                      <span>Total</span>
+                      <span class="sort-header-indicator"></span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="sort-header-button" type="button" data-order-sort="balance">
+                      <span>Saldo</span>
+                      <span class="sort-header-indicator"></span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="sort-header-button" type="button" data-order-sort="status">
+                      <span>Estado</span>
+                      <span class="sort-header-indicator"></span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="sort-header-button" type="button" data-order-sort="deliveryDate">
+                      <span>Entrega</span>
+                      <span class="sort-header-indicator"></span>
+                    </button>
+                  </th>
                   <th>
                     <input type="checkbox" id="select-all-orders" aria-label="Seleccionar pedidos visibles">
                   </th>
@@ -257,6 +297,14 @@
               </thead>
               <tbody id="orders-table-body"></tbody>
             </table>
+          </div>
+          <div class="orders-pagination" id="orders-pagination">
+            <span class="orders-pagination-summary" id="orders-pagination-summary"></span>
+            <div class="orders-pagination-actions">
+              <span class="orders-pagination-info" id="orders-pagination-info"></span>
+              <button class="ghost-button" type="button" id="orders-prev-page">Anterior</button>
+              <button class="ghost-button" type="button" id="orders-next-page">Siguiente</button>
+            </div>
           </div>
         </section>
 
