@@ -654,7 +654,7 @@ function renderOrders() {
     return;
   }
 
-  const visibleOrders = getFilteredOrders();
+  const visibleOrders = sortOrdersByDelivery(getFilteredOrders());
 
   if (!visibleOrders.length) {
     syncBulkOrdersToolbar();
@@ -668,8 +668,10 @@ function renderOrders() {
 
   dom.ordersBody.innerHTML = visibleOrders
     .map(
-      (order) => `
-        <tr>
+      (order) => {
+        const urgencyClass = getOrderDeliveryUrgencyClass(order);
+        return `
+        <tr class="${urgencyClass}">
           <td>${formatDate(order.date)}</td>
           <td>${escapeHtml(order.client)}</td>
           <td>${renderOrderContactCell(order.contact)}</td>
@@ -720,7 +722,8 @@ function renderOrders() {
             </div>
           </td>
         </tr>
-      `
+      `;
+      }
     )
     .join("");
 
@@ -1976,6 +1979,15 @@ function formatDate(value) {
   return `${day}/${month}/${year}`;
 }
 
+function parseIsoDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function formatDateIso(value) {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -2005,11 +2017,65 @@ function todayString() {
   return `${year}-${month}-${day}`;
 }
 
+function startOfDay(value) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function getDaysUntil(value) {
+  const targetDate = parseIsoDate(value);
+  if (!targetDate) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const today = startOfDay(new Date());
+  const diffMs = targetDate.getTime() - today.getTime();
+  return Math.floor(diffMs / 86400000);
+}
+
+function sortOrdersByDelivery(orders) {
+  return [...orders].sort((left, right) => {
+    const leftHasDelivery = Boolean(left.deliveryDate);
+    const rightHasDelivery = Boolean(right.deliveryDate);
+
+    if (leftHasDelivery && rightHasDelivery && left.deliveryDate !== right.deliveryDate) {
+      return left.deliveryDate.localeCompare(right.deliveryDate);
+    }
+
+    if (leftHasDelivery !== rightHasDelivery) {
+      return leftHasDelivery ? -1 : 1;
+    }
+
+    if (left.date !== right.date) {
+      return left.date.localeCompare(right.date);
+    }
+
+    return left.id - right.id;
+  });
+}
+
+function getOrderDeliveryUrgencyClass(order) {
+  if (!order.deliveryDate || order.delivered) {
+    return "";
+  }
+
+  const daysUntilDelivery = getDaysUntil(order.deliveryDate);
+  if (daysUntilDelivery <= 2) {
+    return "order-row-urgent";
+  }
+  if (daysUntilDelivery <= 7) {
+    return "order-row-warning";
+  }
+  return "";
+}
+
 function startOfMonth(value) {
   return new Date(value.getFullYear(), value.getMonth(), 1);
 }
 
 function statusClass(tag) {
+  if (tag === "Pendiente") {
+    return "pending";
+  }
   if (tag === "Entregado") {
     return "delivered";
   }

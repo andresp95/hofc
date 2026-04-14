@@ -12,6 +12,12 @@
   --accent-deep: #935362;
   --success: #4f8f74;
   --danger: #d8657d;
+  --success-soft: rgba(219, 243, 232, 0.95);
+  --danger-soft: rgba(251, 226, 233, 0.96);
+  --warning: #d79257;
+  --warning-soft: rgba(253, 237, 221, 0.96);
+  --info: #658fba;
+  --info-soft: rgba(228, 239, 250, 0.96);
   --shadow: 0 24px 60px rgba(180, 110, 125, 0.18);
   --radius-xl: 28px;
   --radius-lg: 18px;
@@ -556,6 +562,31 @@ button {
   border-bottom: none;
 }
 
+.orders-table tbody tr.order-row-warning td,
+.orders-table tbody tr.order-row-urgent td {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.orders-table tbody tr.order-row-warning td {
+  background: linear-gradient(180deg, rgba(255, 251, 247, 0.98), var(--warning-soft));
+}
+
+.orders-table tbody tr.order-row-urgent td {
+  background: linear-gradient(180deg, rgba(255, 250, 252, 0.98), var(--danger-soft));
+}
+
+.orders-table tbody tr.order-row-warning td:first-child,
+.orders-table tbody tr.order-row-urgent td:first-child {
+  border-top-left-radius: 16px;
+  border-bottom-left-radius: 16px;
+}
+
+.orders-table tbody tr.order-row-warning td:last-child,
+.orders-table tbody tr.order-row-urgent td:last-child {
+  border-top-right-radius: 16px;
+  border-bottom-right-radius: 16px;
+}
+
 .table-input,
 .table-select,
 .modal-form input,
@@ -1038,23 +1069,32 @@ button {
 .status-badge {
   background: rgba(253, 234, 238, 0.92);
   color: var(--accent-deep);
+  border-color: rgba(218, 115, 133, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .status-badge.paid {
-  background: rgba(212, 249, 236, 0.92);
+  background: var(--success-soft);
   color: var(--success);
+  border-color: rgba(79, 143, 116, 0.22);
+}
+
+.status-badge.pending {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: rgba(216, 101, 125, 0.26);
 }
 
 .status-badge.delivered {
-  background: rgba(247, 239, 241, 0.96);
-  color: #a16070;
-  border-color: rgba(218, 115, 133, 0.24);
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: rgba(79, 143, 116, 0.26);
 }
 
 .status-badge.prepared {
-  background: rgba(221, 246, 232, 0.92);
-  color: var(--success);
-  border-color: rgba(45, 140, 103, 0.4);
+  background: var(--info-soft);
+  color: var(--info);
+  border-color: rgba(101, 143, 186, 0.28);
 }
 
 .money {
