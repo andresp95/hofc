@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Control Local de Pedidos</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css', v=assets.styles) }}">
   </head>
   <body>
     <div class="page-shell">
       <aside class="sidebar">
         <div class="brand-card">
           <img
-            src="{{ url_for('static', filename='res/logo.png') }}"
+            src="{{ url_for('static', filename='res/logo.png', v=assets.logo) }}"
             alt="Control Rosa"
             class="brand-logo"
           >
@@ -604,6 +604,6 @@
     <div class="toast-stack" id="toast-stack"></div>
 
     <script id="app-config" type="application/json">{{ config|tojson }}</script>
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js', v=assets.app) }}"></script>
   </body>
 </html>

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import Flask, jsonify, render_template, request
 
-from constants import ALLOWED_PAYMENT_METHODS, ALLOWED_PRODUCT_CATEGORIES, ALLOWED_UNITS
+from constants import ALLOWED_PAYMENT_METHODS, ALLOWED_PRODUCT_CATEGORIES, ALLOWED_UNITS, BASE_DIR
 from errors import ValidationError
 from services import (
     delete_order,
@@ -21,6 +23,14 @@ from services import (
 
 
 def register_routes(app: Flask) -> None:
+    def asset_version(*relative_paths: str) -> str:
+        timestamps = []
+        for relative_path in relative_paths:
+            asset_path = BASE_DIR / Path(relative_path)
+            if asset_path.exists():
+                timestamps.append(int(asset_path.stat().st_mtime))
+        return str(max(timestamps)) if timestamps else "0"
+
     @app.errorhandler(ValidationError)
     def handle_validation_error(error: ValidationError):
         return jsonify({"error": str(error)}), 400
@@ -33,6 +43,11 @@ def register_routes(app: Flask) -> None:
                 "units": ALLOWED_UNITS,
                 "paymentMethods": ALLOWED_PAYMENT_METHODS,
                 "productCategories": ALLOWED_PRODUCT_CATEGORIES,
+            },
+            assets={
+                "styles": asset_version("static/css/styles.css"),
+                "app": asset_version("static/js/app.js"),
+                "logo": asset_version("static/res/logo.png"),
             },
         )
 

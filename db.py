@@ -29,6 +29,12 @@ def table_exists(connection: sqlite3.Connection, table_name: str) -> bool:
     return row is not None
 
 
+def table_columns(connection: sqlite3.Connection, table_name: str) -> tuple[str, ...]:
+    return tuple(
+        row[1] for row in connection.execute(f"PRAGMA table_info({quote_identifier(table_name)})")
+    )
+
+
 def build_create_sql(create_sql: str, original_name: str, target_name: str) -> str:
     variants = (
         f"CREATE TABLE {original_name}",
@@ -59,9 +65,7 @@ def get_model_table_definitions() -> list[dict]:
 def rebuild_table(connection: sqlite3.Connection, table_definition: dict) -> None:
     table_name = table_definition["name"]
     temp_name = f"__{table_name}_new"
-    current_columns = [
-        row[1] for row in connection.execute(f"PRAGMA table_info({quote_identifier(table_name)})")
-    ]
+    current_columns = table_columns(connection, table_name)
     common_columns = [
         column for column in table_definition["columns"] if column in current_columns
     ]
@@ -128,7 +132,11 @@ def ensure_schema() -> None:
                 continue
 
             current_sql = existing_table[0] or ""
-            if normalize_sql(current_sql) != normalize_sql(table_definition["create_sql"]):
+            current_columns = table_columns(connection, table_name)
+            if (
+                current_columns != table_definition["columns"]
+                or normalize_sql(current_sql) != normalize_sql(table_definition["create_sql"])
+            ):
                 rebuild_table(connection, table_definition)
 
         sync_product_prices_sql(connection)
