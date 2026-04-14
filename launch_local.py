@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from contextlib import suppress
 from pathlib import Path
@@ -18,6 +19,8 @@ HASH_FILE = VENV_DIR / ".requirements.sha256"
 APP_URL = "http://127.0.0.1:5000"
 DEFAULT_REPO_URL = "https://github.com/andresp95/hofc.git"
 TRAY_FLAG = "--tray"
+RESTART_FROM_PID_FLAG = "--restart-from-pid"
+TRAY_PID_FILE = BASE_DIR / ".tray.pid"
 
 
 def venv_python() -> Path:
@@ -183,22 +186,105 @@ def show_windows_message(title: str, message: str) -> None:
         ctypes.windll.user32.MessageBoxW(None, message, title, 0x10)
 
 
+def read_tray_pid() -> int | None:
+    if not TRAY_PID_FILE.exists():
+        return None
+
+    try:
+        return int(TRAY_PID_FILE.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def write_tray_pid(pid: int) -> None:
+    TRAY_PID_FILE.write_text(str(pid), encoding="utf-8")
+
+
+def remove_tray_pid(pid: int | None = None) -> None:
+    if not TRAY_PID_FILE.exists():
+        return
+
+    if pid is not None:
+        current_pid = read_tray_pid()
+        if current_pid not in {None, pid}:
+            return
+
+    with suppress(OSError):
+        TRAY_PID_FILE.unlink()
+
+
+def is_process_running(pid: int | None) -> bool:
+    if not pid or pid <= 0:
+        return False
+
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def wait_for_process_exit(pid: int, timeout_seconds: float = 15) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if not is_process_running(pid):
+            return True
+        time.sleep(0.25)
+    return not is_process_running(pid)
+
+
+def windows_creation_flags(*, detached: bool) -> int:
+    creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    if detached:
+        creationflags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+    return creationflags
+
+
+def relaunch_windows_app(*, after_pid: int | None = None) -> None:
+    python_path = venv_pythonw()
+    if not python_path.exists():
+        python_path = venv_python()
+
+    command = [str(python_path), str(BASE_DIR / "launch_local.py")]
+    if after_pid is not None:
+        command.extend([RESTART_FROM_PID_FLAG, str(after_pid)])
+
+    subprocess.Popen(
+        command,
+        cwd=BASE_DIR,
+        creationflags=windows_creation_flags(detached=True),
+        close_fds=True,
+    )
+
+
+def ensure_single_windows_tray_instance() -> bool:
+    existing_pid = read_tray_pid()
+    if existing_pid in {None, os.getpid()}:
+        return True
+
+    if is_process_running(existing_pid):
+        print(f"La app ya está ejecutándose en segundo plano (PID {existing_pid}).")
+        webbrowser.open(APP_URL)
+        return False
+
+    remove_tray_pid(existing_pid)
+    return True
+
+
 def spawn_windows_tray_process() -> int:
+    if not ensure_single_windows_tray_instance():
+        return 0
+
     pythonw_path = venv_pythonw()
     if not pythonw_path.exists():
         print("No se encontró pythonw.exe en el entorno virtual. Se inicia en modo consola.")
         return run_console_server()
 
-    creationflags = 0
-    detached = getattr(subprocess, "DETACHED_PROCESS", 0)
-    new_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-    creationflags |= detached | new_group
-
     try:
         subprocess.Popen(
             [str(pythonw_path), str(BASE_DIR / "launch_local.py"), TRAY_FLAG],
             cwd=BASE_DIR,
-            creationflags=creationflags,
+            creationflags=windows_creation_flags(detached=True),
             close_fds=True,
         )
     except OSError as exc:
@@ -245,31 +331,21 @@ class LocalServer:
 
 
 def restart_windows_app() -> None:
-    launcher_path = BASE_DIR / "iniciar_local.bat"
-    if not launcher_path.exists():
-        pythonw_path = venv_pythonw()
-        python_path = pythonw_path if pythonw_path.exists() else venv_python()
-        subprocess.Popen(
-            [str(python_path), str(BASE_DIR / "launch_local.py"), TRAY_FLAG],
-            cwd=BASE_DIR,
-            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
-            close_fds=True,
+    relaunch_windows_app(after_pid=os.getpid())
+
+
+def run_windows_restart_helper(previous_pid: int) -> int:
+    print(f"Esperando que cierre la instancia anterior (PID {previous_pid})...")
+    if not wait_for_process_exit(previous_pid):
+        show_windows_message(
+            "Inicio local",
+            f"La instancia anterior (PID {previous_pid}) no se cerró a tiempo. Cerrala manualmente e iniciá otra vez.",
         )
-        return
+        return 1
 
-    startupinfo = None
-    if os.name == "nt":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = 0
-
-    subprocess.Popen(
-        ["cmd.exe", "/c", str(launcher_path)],
-        cwd=BASE_DIR,
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
-        close_fds=True,
-        startupinfo=startupinfo,
-    )
+    remove_tray_pid(previous_pid)
+    relaunch_windows_app()
+    return 0
 
 
 def run_windows_tray() -> int:
@@ -282,6 +358,9 @@ def run_windows_tray() -> int:
         )
         raise SystemExit(1) from exc
 
+    if not ensure_single_windows_tray_instance():
+        return 0
+
     try:
         server = LocalServer()
         server.start()
@@ -292,17 +371,24 @@ def run_windows_tray() -> int:
         )
         return 1
 
+    write_tray_pid(os.getpid())
+    shutdown_action = "stop"
+
     def open_panel(icon: pystray.Icon, item: object) -> None:
         del icon, item
         webbrowser.open(APP_URL)
 
     def restart_app(icon: pystray.Icon, item: object) -> None:
         del item
+        nonlocal shutdown_action
+        shutdown_action = "restart"
         restart_windows_app()
         icon.stop()
 
     def stop_app(icon: pystray.Icon, item: object) -> None:
         del item
+        nonlocal shutdown_action
+        shutdown_action = "stop"
         icon.stop()
 
     icon = pystray.Icon(
@@ -320,7 +406,15 @@ def run_windows_tray() -> int:
         icon.run()
     finally:
         server.stop()
-    return 0
+        remove_tray_pid(os.getpid())
+        if shutdown_action == "restart":
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(0)
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 def run_console_server() -> int:
@@ -331,6 +425,16 @@ def run_console_server() -> int:
 
 def main() -> int:
     os.chdir(BASE_DIR)
+
+    if RESTART_FROM_PID_FLAG in sys.argv:
+        index = sys.argv.index(RESTART_FROM_PID_FLAG)
+        try:
+            previous_pid = int(sys.argv[index + 1])
+        except (IndexError, ValueError):
+            print("PID inválido para reinicio.")
+            return 1
+        return run_windows_restart_helper(previous_pid)
+
     ensure_latest_code()
     ensure_venv()
     ensure_dependencies()
