@@ -2045,12 +2045,31 @@ function sortOrdersByDelivery(orders) {
       return leftHasDelivery ? -1 : 1;
     }
 
+    if (!leftHasDelivery && !rightHasDelivery) {
+      const leftStatusPriority = getOrderStatusSortPriority(left);
+      const rightStatusPriority = getOrderStatusSortPriority(right);
+
+      if (leftStatusPriority !== rightStatusPriority) {
+        return leftStatusPriority - rightStatusPriority;
+      }
+    }
+
     if (left.date !== right.date) {
       return left.date.localeCompare(right.date);
     }
 
     return left.id - right.id;
   });
+}
+
+function getOrderStatusSortPriority(order) {
+  if (order.delivered) {
+    return 2;
+  }
+  if (order.prepared) {
+    return 1;
+  }
+  return 0;
 }
 
 function getOrderDeliveryUrgencyClass(order) {
