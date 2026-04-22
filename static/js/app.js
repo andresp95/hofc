@@ -697,9 +697,9 @@ function renderOrders() {
   dom.ordersBody.innerHTML = visibleOrders
     .map(
       (order) => {
-        const urgencyClass = getOrderDeliveryUrgencyClass(order);
+        const rowClass = getOrderRowClass(order);
         return `
-        <tr class="${urgencyClass}">
+        <tr class="${rowClass}">
           <td>${formatDate(order.date)}</td>
           <td>${escapeHtml(order.client)}</td>
           <td>${renderOrderContactCell(order.contact)}</td>
@@ -2239,6 +2239,13 @@ function changeOrdersPage(delta) {
 
 function resetOrdersPagination() {
   state.orderCurrentPage = 1;
+}
+
+function getOrderRowClass(order) {
+  if (order.delivered) {
+    return "order-row-delivered";
+  }
+  return getOrderDeliveryUrgencyClass(order);
 }
 
 function getOrderDeliveryUrgencyClass(order) {

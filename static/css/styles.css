@@ -590,6 +590,10 @@ button {
   background: rgba(255, 255, 255, 0.9);
 }
 
+.orders-table tbody tr.order-row-delivered td {
+  background: linear-gradient(180deg, rgba(246, 253, 249, 0.98), var(--success-soft));
+}
+
 .orders-table tbody tr.order-row-warning td {
   background: linear-gradient(180deg, rgba(255, 251, 247, 0.98), var(--warning-soft));
 }
@@ -598,12 +602,14 @@ button {
   background: linear-gradient(180deg, rgba(255, 250, 252, 0.98), var(--danger-soft));
 }
 
+.orders-table tbody tr.order-row-delivered td:first-child,
 .orders-table tbody tr.order-row-warning td:first-child,
 .orders-table tbody tr.order-row-urgent td:first-child {
   border-top-left-radius: 16px;
   border-bottom-left-radius: 16px;
 }
 
+.orders-table tbody tr.order-row-delivered td:last-child,
 .orders-table tbody tr.order-row-warning td:last-child,
 .orders-table tbody tr.order-row-urgent td:last-child {
   border-top-right-radius: 16px;
