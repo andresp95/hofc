@@ -121,15 +121,7 @@ def parse_product_component(item: dict) -> dict:
     }
 
 
-def parse_product(payload: dict) -> dict:
-    category = parse_text(payload.get("category"), "Categoria", required=True)
-    if category not in ALLOWED_PRODUCT_CATEGORIES:
-        raise ValidationError("Categoria: opción inválida.")
-
-    components_payload = payload.get("components") or []
-    if not components_payload:
-        raise ValidationError("El producto debe tener al menos un material.")
-
+def consolidate_components(components_payload: list[dict], item_label: str) -> list[dict]:
     consolidated_components: dict[int, dict] = {}
     for component in (parse_product_component(item) for item in components_payload):
         material_id = component["material_id"]
@@ -146,16 +138,27 @@ def parse_product(payload: dict) -> dict:
             4,
         )
 
+    if not consolidated_components:
+        raise ValidationError(f"{item_label} debe tener al menos un material.")
+
+    return list(consolidated_components.values())
+
+
+def parse_product(payload: dict) -> dict:
+    category = parse_text(payload.get("category"), "Categoria", required=True)
+    if category not in ALLOWED_PRODUCT_CATEGORIES:
+        raise ValidationError("Categoria: opción inválida.")
+
+    components_payload = payload.get("components") or []
+    consolidated_components = consolidate_components(components_payload, "El producto")
+
     return {
         "id": parse_identifier(payload.get("id")),
         "name": parse_text(payload.get("name"), "Nombre", required=True),
         "category": category,
         "notes": parse_text(payload.get("notes"), "Notas"),
-        "components": list(consolidated_components.values()),
-        "price": round(
-            sum(component["subtotal"] for component in consolidated_components.values()),
-            4,
-        ),
+        "components": consolidated_components,
+        "price": round(sum(component["subtotal"] for component in consolidated_components), 4),
     }
 
 
@@ -189,7 +192,31 @@ def fetch_product_by_name(name: str) -> dict | None:
     return fetch_product_with_price("lower(p.name) = lower(?)", (name,))
 
 
+def parse_express_item(item: dict, multiplier: float) -> dict:
+    materials_payload = item.get("materials") or []
+    if not materials_payload:
+        raise ValidationError("El producto express debe tener al menos un material.")
+
+    components = consolidate_components(materials_payload, "El producto express")
+    quantity = parse_number(item.get("quantity"), "Cantidad", strictly_positive=True)
+    cost = round(sum(component["subtotal"] for component in components), 4)
+
+    return {
+        "kind": "express",
+        "product_id": None,
+        "quantity": quantity,
+        "unit_price": round(cost * multiplier, 2),
+        "express_product": {
+            "materials": components,
+        },
+    }
+
+
 def parse_order_item(item: dict, multiplier: float) -> dict:
+    item_kind = str(item.get("type") or "product").strip().lower()
+    if item_kind == "express":
+        return parse_express_item(item, multiplier)
+
     product_id = parse_identifier(item.get("productId"))
     product_name = parse_text(item.get("productName"), "Producto", required=product_id is None)
     quantity = parse_number(item.get("quantity"), "Cantidad", strictly_positive=True)
@@ -201,6 +228,7 @@ def parse_order_item(item: dict, multiplier: float) -> dict:
         )
 
     return {
+        "kind": "product",
         "product_id": product["id"],
         "product_name": product["name"],
         "unit_price": round(float(product["price"]) * multiplier, 2),
@@ -232,18 +260,23 @@ def parse_order(payload: dict) -> dict:
     if not items_payload:
         raise ValidationError("Debe agregar al menos un producto al pedido.")
 
-    parsed_items = [parse_order_item(item, multiplier) for item in items_payload]
-
-    consolidated_items: dict[int, dict] = {}
-    for item in parsed_items:
-        product_id = item["product_id"]
-        if product_id not in consolidated_items:
-            consolidated_items[product_id] = dict(item)
+    parsed_items: list[dict] = []
+    consolidated_products: dict[int, int] = {}
+    for item in items_payload:
+        parsed_item = parse_order_item(item, multiplier)
+        if parsed_item["kind"] != "product":
+            parsed_items.append(parsed_item)
             continue
-        consolidated_items[product_id]["quantity"] = round(
-            consolidated_items[product_id]["quantity"] + item["quantity"],
-            4,
-        )
+
+        product_id = parsed_item["product_id"]
+        existing_index = consolidated_products.get(product_id)
+        if existing_index is None:
+            consolidated_products[product_id] = len(parsed_items)
+            parsed_items.append(parsed_item)
+            continue
+
+        existing_item = parsed_items[existing_index]
+        existing_item["quantity"] = round(existing_item["quantity"] + parsed_item["quantity"], 4)
 
     return {
         "order_date": validate_date(
@@ -268,7 +301,7 @@ def parse_order(payload: dict) -> dict:
             required=False,
         ),
         "notes": parse_text(payload.get("notes"), "Notas"),
-        "items": list(consolidated_items.values()),
+        "items": parsed_items,
     }
 
 
@@ -365,22 +398,28 @@ def replace_materials(items: list[dict]) -> None:
         removed_ids = existing_ids - kept_ids
         if removed_ids:
             placeholders = ",".join("?" for _ in removed_ids)
-            used_rows = fetch_all(
+            used_material_ids: set[int] = set()
+            for query in (
                 f"""
                 SELECT DISTINCT pm.material_id
                 FROM product_materials AS pm
                 WHERE pm.material_id IN ({placeholders})
                 """,
-                tuple(removed_ids),
-            )
-            if used_rows:
-                used_names = [
-                    existing_names[row["material_id"]]
-                    for row in used_rows
-                    if row["material_id"] in existing_names
-                ]
+                f"""
+                SELECT DISTINCT epm.material_id
+                FROM express_product_materials AS epm
+                WHERE epm.material_id IN ({placeholders})
+                """,
+            ):
+                used_material_ids.update(
+                    row["material_id"]
+                    for row in fetch_all(query, tuple(removed_ids))
+                )
+
+            if used_material_ids:
+                used_names = [existing_names[material_id] for material_id in used_material_ids if material_id in existing_names]
                 raise ValidationError(
-                    "No se pueden eliminar materiales usados en productos: "
+                    "No se pueden eliminar materiales usados en productos o productos express: "
                     + ", ".join(sorted(used_names))
                 )
 
@@ -513,23 +552,73 @@ def save_order(order_id: int | None, payload: dict) -> int:
             if cursor.rowcount == 0:
                 raise ValidationError("No se encontró el pedido a actualizar.")
             connection.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
+            connection.execute("DELETE FROM express_products WHERE order_id = ?", (order_id,))
 
-        connection.executemany(
-            """
-            INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            [
+        express_counter = 1
+        for item in payload["items"]:
+            if item["kind"] == "express":
+                express_product = item["express_product"]
+                express_name = f"Express #{express_counter}"
+                express_counter += 1
+                cursor = connection.execute(
+                    """
+                    INSERT INTO express_products (order_id, name)
+                    VALUES (?, ?)
+                    """,
+                    (
+                        order_id,
+                        express_name,
+                    ),
+                )
+                express_product_id = cursor.lastrowid
+                connection.executemany(
+                    """
+                    INSERT INTO express_product_materials (express_product_id, material_id, quantity)
+                    VALUES (?, ?, ?)
+                    """,
+                    [
+                        (
+                            express_product_id,
+                            component["material_id"],
+                            component["quantity"],
+                        )
+                        for component in express_product["materials"]
+                    ],
+                )
+                connection.execute(
+                    """
+                    INSERT INTO order_items (
+                        order_id, product_id, express_product_id, product_name, unit_price, quantity
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        order_id,
+                        None,
+                        express_product_id,
+                        express_name,
+                        item["unit_price"],
+                        item["quantity"],
+                    ),
+                )
+                continue
+
+            connection.execute(
+                """
+                INSERT INTO order_items (
+                    order_id, product_id, express_product_id, product_name, unit_price, quantity
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
                 (
                     order_id,
                     item["product_id"],
+                    None,
                     item["product_name"],
                     item["unit_price"],
                     item["quantity"],
-                )
-                for item in payload["items"]
-            ],
-        )
+                ),
+            )
 
     return int(order_id)
 
@@ -665,29 +754,71 @@ def fetch_orders() -> list[dict]:
             oi.id,
             oi.order_id,
             oi.product_id,
+            oi.express_product_id,
             oi.product_name,
             oi.unit_price,
             oi.quantity,
             p.name AS current_product_name
         FROM order_items AS oi
         LEFT JOIN products AS p ON p.id = oi.product_id
+        LEFT JOIN express_products AS ep ON ep.id = oi.express_product_id
         ORDER BY oi.order_id, oi.id
+        """
+    )
+    express_material_rows = fetch_all(
+        """
+        SELECT
+            epm.id,
+            epm.express_product_id,
+            epm.material_id,
+            epm.quantity,
+            m.name AS material_name,
+            m.unit,
+            round(m.bundle_price / m.bundle_quantity, 4) AS unit_price
+        FROM express_product_materials AS epm
+        JOIN materials AS m ON m.id = epm.material_id
+        ORDER BY epm.express_product_id, m.name COLLATE NOCASE ASC
         """
     )
 
     items_by_order: dict[int, list[dict]] = defaultdict(list)
+    materials_by_express_product: dict[int, list[dict]] = defaultdict(list)
+    express_numbers_by_order: dict[int, int] = defaultdict(int)
+    for row in express_material_rows:
+        quantity = round(float(row["quantity"]), 4)
+        unit_price = round(float(row["unit_price"]), 4)
+        materials_by_express_product[row["express_product_id"]].append(
+            {
+                "id": row["id"],
+                "materialId": row["material_id"],
+                "materialName": row["material_name"],
+                "unit": row["unit"],
+                "quantity": quantity,
+                "unitPrice": unit_price,
+                "subtotal": round(quantity * unit_price, 4),
+            }
+        )
+
     for item in items_rows:
-        product_name = item["current_product_name"] or item["product_name"]
+        is_express = item["express_product_id"] is not None
+        if is_express:
+            express_numbers_by_order[item["order_id"]] += 1
+            product_name = f"Express #{express_numbers_by_order[item['order_id']]}"
+        else:
+            product_name = item["current_product_name"] or item["product_name"]
         quantity = round(float(item["quantity"]), 4)
         unit_price = round(float(item["unit_price"]), 2)
         items_by_order[item["order_id"]].append(
             {
                 "id": item["id"],
+                "kind": "express" if is_express else "product",
                 "productId": item["product_id"],
+                "expressProductId": item["express_product_id"],
                 "productName": product_name,
                 "quantity": quantity,
                 "unitPrice": unit_price,
                 "subtotal": round(quantity * unit_price, 2),
+                "materials": materials_by_express_product.get(item["express_product_id"], []),
             }
         )
 

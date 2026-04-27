@@ -966,6 +966,44 @@ button {
   background: rgba(254, 244, 246, 0.82);
 }
 
+.order-item-row[data-item-kind="express"] {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.express-item-top {
+  display: grid;
+  grid-template-columns: minmax(220px, 2.4fr) minmax(110px, 0.8fr) minmax(120px, 0.9fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.express-item-top > * {
+  min-width: 0;
+}
+
+.express-name-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.express-materials-block {
+  display: grid;
+  gap: 12px;
+}
+
+.express-materials-header h5 {
+  margin: 0;
+  line-height: 1.08;
+  color: var(--accent-deep);
+}
+
 .product-material-row {
   display: grid;
   grid-template-columns:
@@ -1119,6 +1157,12 @@ button {
   border-radius: 999px;
   font-size: 0.92rem;
   border: 1px solid transparent;
+}
+
+.product-badge.express {
+  border-color: rgba(218, 115, 133, 0.18);
+  background: rgba(253, 227, 231, 0.92);
+  color: var(--accent-deep);
 }
 
 .product-badge {
@@ -1309,7 +1353,8 @@ button {
 @media (max-width: 860px) {
   .form-grid,
   .order-item-row,
-  .product-material-row {
+  .product-material-row,
+  .express-item-top {
     grid-template-columns: 1fr;
   }
 

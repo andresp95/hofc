@@ -13,6 +13,7 @@ def create_app() -> Flask:
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{DB_PATH}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
+    ensure_schema()
     app.teardown_appcontext(close_db)
     register_routes(app)
     return app
@@ -22,5 +23,4 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    ensure_schema()
     app.run(host="127.0.0.1", port=5000, debug=True, use_reloader=True)

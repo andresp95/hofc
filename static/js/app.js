@@ -70,6 +70,7 @@ const dom = {
   orderForm: document.getElementById("order-form"),
   productMaterialsContainer: document.getElementById("product-materials-container"),
   orderItemsContainer: document.getElementById("order-items-container"),
+  addExpressOrderItemButton: document.getElementById("add-express-order-item"),
   productModalTitle: document.getElementById("product-modal-title"),
   productModalKicker: document.getElementById("product-modal-kicker"),
   productSubmitButton: document.getElementById("product-submit-button"),
@@ -129,9 +130,9 @@ function bindEvents() {
   });
 
   document.getElementById("create-order-button").addEventListener("click", () => {
-    if (!state.products.length) {
-      showToast("Primero cargá al menos un producto.", "error");
-      activateSection("productos");
+    if (!state.products.length && !state.materials.length) {
+      showToast("Primero cargá al menos un producto o un material.", "error");
+      activateSection("materiales");
       return;
     }
     openOrderModal();
@@ -292,7 +293,14 @@ function bindEvents() {
   dom.confirmDeleteButton.addEventListener("click", confirmDelete);
 
   document.getElementById("add-product-material").addEventListener("click", () => addProductMaterialRow());
-  document.getElementById("add-order-item").addEventListener("click", () => addOrderItemRow());
+  document.getElementById("add-order-item").addEventListener("click", () => {
+    removeOrderItemsByKind("express");
+    addOrderItemRow();
+  });
+  dom.addExpressOrderItemButton.addEventListener("click", () => {
+    removeOrderItemsByKind("product");
+    addExpressOrderItemRow();
+  });
   document.getElementById("add-budget-item").addEventListener("click", () => addBudgetItemRow());
   document.getElementById("reset-budget-button").addEventListener("click", resetBudgetPlanner);
 
@@ -351,29 +359,98 @@ function bindEvents() {
       event.preventDefault();
       const row = option.closest(".order-item-row");
       const product = state.products.find((entry) => entry.id === Number(option.dataset.productOption));
-      if (row && product) {
+      if (row && product && row.dataset.itemKind !== "express") {
         selectProductForRow(row, product, updateOrderModalTotals);
       }
       return;
     }
 
-    const removeButton = event.target.closest("[data-remove-order-item]");
-    if (!removeButton) {
+    const materialOption = event.target.closest("[data-material-option]");
+    if (materialOption) {
+      event.preventDefault();
+      const row = materialOption.closest(".order-item-row");
+      const material = state.materials.find((entry) => entry.id === Number(materialOption.dataset.materialOption));
+      if (row && material && row.dataset.itemKind === "express") {
+        const materialRow = materialOption.closest(".product-material-row");
+        if (materialRow) {
+          selectMaterialForRow(materialRow, material, () => {
+            updateExpressOrderItemSummary(row);
+            updateOrderModalTotals();
+          });
+        }
+      }
       return;
     }
 
-    removeButton.closest(".order-item-row")?.remove();
-    if (!dom.orderItemsContainer.children.length) {
-      addOrderItemRow();
+    const addMaterialButton = event.target.closest("[data-add-express-material]");
+    if (addMaterialButton) {
+      const row = addMaterialButton.closest(".order-item-row");
+      if (row && row.dataset.itemKind === "express") {
+        addExpressMaterialRow(row);
+      }
+      return;
     }
-    updateOrderModalTotals();
+
+    const removeMaterialButton = event.target.closest("[data-remove-product-material]");
+    if (removeMaterialButton) {
+      const materialRow = removeMaterialButton.closest(".product-material-row");
+      const row = removeMaterialButton.closest(".order-item-row");
+      if (materialRow) {
+        materialRow.remove();
+      }
+      if (row && row.dataset.itemKind === "express") {
+        if (!getExpressMaterialsContainer(row)?.querySelector(".product-material-row")) {
+          addExpressMaterialRow(row);
+        }
+        updateExpressOrderItemSummary(row);
+        updateOrderModalTotals();
+      }
+      return;
+    }
+
+    const removeExpressButton = event.target.closest("[data-remove-express-item]");
+    if (removeExpressButton) {
+      removeExpressButton.closest(".order-item-row")?.remove();
+      if (!dom.orderItemsContainer.querySelector(".order-item-row")) {
+        addDefaultOrderItemRow();
+      }
+      updateOrderModalTotals();
+      return;
+    }
+
+    const removeButton = event.target.closest("[data-remove-order-item]");
+    if (removeButton) {
+      removeButton.closest(".order-item-row")?.remove();
+      if (!dom.orderItemsContainer.querySelector(".order-item-row")) {
+        addDefaultOrderItemRow();
+      }
+      updateOrderModalTotals();
+    }
   });
 
   dom.orderItemsContainer.addEventListener("input", (event) => {
     const row = event.target.closest(".order-item-row");
     if (row) {
+      const materialRow = event.target.closest(".product-material-row");
+      if (row.dataset.itemKind === "express" && !materialRow && event.target.name === "quantity") {
+        updateExpressOrderItemSummary(row);
+        updateOrderModalTotals();
+        return;
+      }
       if (event.target.name === "productName") {
         renderProductDropdown(row, true);
+        updateOrderItemSummary(row);
+        updateOrderModalTotals();
+        return;
+      }
+      if (row.dataset.itemKind === "express" && materialRow) {
+        if (event.target.name === "materialName") {
+          renderMaterialDropdown(materialRow, true);
+        }
+        updateProductMaterialRow(materialRow);
+        updateExpressOrderItemSummary(row);
+        updateOrderModalTotals();
+        return;
       }
       updateOrderItemSummary(row);
       updateOrderModalTotals();
@@ -384,6 +461,12 @@ function bindEvents() {
     const row = event.target.closest(".order-item-row");
     if (row && event.target.name === "productName") {
       renderProductDropdown(row, true);
+    }
+    if (row && row.dataset.itemKind === "express" && event.target.name === "materialName") {
+      const materialRow = event.target.closest(".product-material-row");
+      if (materialRow) {
+        renderMaterialDropdown(materialRow, true);
+      }
     }
   });
 
@@ -624,7 +707,10 @@ function getFilteredOrders() {
       const haystack = [
         order.client,
         order.contact,
-        ...order.items.map((item) => item.productName),
+        ...order.items.flatMap((item) => [
+          item.productName,
+          ...(item.materials || []).map((material) => material.materialName),
+        ]),
       ]
         .join(" ")
         .toLocaleLowerCase();
@@ -708,8 +794,8 @@ function renderOrders() {
               ${order.items
                 .map(
                   (item) => `
-                    <span class="product-badge">
-                      ${escapeHtml(item.productName)} x ${formatQuantity(item.quantity)}
+                    <span class="product-badge ${item.kind === "express" ? "express" : ""}">
+                      ${escapeHtml(item.productName)}
                     </span>
                   `
                 )
@@ -1212,9 +1298,9 @@ function openProductModal(product = null) {
   openModal(dom.productModal);
 }
 
-function addProductMaterialRow(component = null) {
-  dom.productMaterialsContainer.insertAdjacentHTML("beforeend", productMaterialTemplate(component));
-  const row = dom.productMaterialsContainer.lastElementChild;
+function addProductMaterialRow(component = null, container = dom.productMaterialsContainer) {
+  container.insertAdjacentHTML("beforeend", productMaterialTemplate(component));
+  const row = container.lastElementChild;
   if (row) {
     updateProductMaterialRow(row);
     row.querySelector('[name="materialName"]')?.focus();
@@ -1307,7 +1393,7 @@ function renderMaterialDropdown(row, shouldOpen) {
   menu.classList.remove("hidden");
 }
 
-function selectMaterialForRow(row, material) {
+function selectMaterialForRow(row, material, onChange = null) {
   const input = row.querySelector('[name="materialName"]');
   if (!input) {
     return;
@@ -1315,16 +1401,130 @@ function selectMaterialForRow(row, material) {
 
   input.value = material.name;
   updateProductMaterialRow(row);
-  updateProductModalTotal();
+  if (typeof onChange === "function") {
+    onChange();
+  } else {
+    updateProductModalTotal();
+  }
   renderMaterialDropdown(row, false);
 }
 
 function closeAllMaterialDropdowns(exceptRow = null) {
-  dom.productMaterialsContainer.querySelectorAll("[data-material-menu]").forEach((menu) => {
-    if (exceptRow && exceptRow.contains(menu)) {
+  [dom.productMaterialsContainer, dom.orderItemsContainer].forEach((container) => {
+    container.querySelectorAll("[data-material-menu]").forEach((menu) => {
+      if (exceptRow && exceptRow.contains(menu)) {
+        return;
+      }
+      menu.classList.add("hidden");
+    });
+  });
+}
+
+function getExpressMaterialsContainer(row) {
+  return row.querySelector("[data-express-materials-container]");
+}
+
+function addExpressMaterialRow(row, component = null) {
+  const container = getExpressMaterialsContainer(row);
+  if (!container) {
+    return;
+  }
+
+  addProductMaterialRow(component, container);
+  updateExpressOrderItemSummary(row);
+  updateOrderModalTotals();
+}
+
+function updateExpressOrderItemSummary(row) {
+  const quantityInput = row.querySelector('[name="quantity"]');
+  const summary = row.querySelector("[data-item-subtotal]");
+  const materials = Array.from(row.querySelectorAll(".product-material-row"));
+  const quantity = Number.parseFloat(quantityInput?.value);
+
+  const unitCost = materials.reduce((accumulator, materialRow) => {
+    const material = findMaterialByName(materialRow.querySelector('[name="materialName"]').value.trim());
+    const materialQuantity = Number.parseFloat(materialRow.querySelector('[name="quantity"]').value);
+    if (!material || !Number.isFinite(materialQuantity) || materialQuantity <= 0) {
+      return accumulator;
+    }
+    return accumulator + material.unitPrice * materialQuantity;
+  }, 0);
+
+  const total = Number.isFinite(quantity) && quantity > 0 ? unitCost * quantity : 0;
+  row.dataset.costTotal = String(roundTo(total, 4));
+  summary.textContent = formatMoney(total);
+}
+
+function calculateExpressOrderItemCost(row) {
+  const quantity = Number.parseFloat(row.querySelector('[name="quantity"]').value);
+  const unitCost = Array.from(row.querySelectorAll(".product-material-row")).reduce((accumulator, materialRow) => {
+    const material = findMaterialByName(materialRow.querySelector('[name="materialName"]').value.trim());
+    const materialQuantity = Number.parseFloat(materialRow.querySelector('[name="quantity"]').value);
+    if (!material || !Number.isFinite(materialQuantity) || materialQuantity <= 0) {
+      return accumulator;
+    }
+    return accumulator + material.unitPrice * materialQuantity;
+  }, 0);
+
+  return Number.isFinite(quantity) && quantity > 0 ? unitCost * quantity : 0;
+}
+
+function collectExpressOrderItem(row, index) {
+  const quantity = row.querySelector('[name="quantity"]').value.trim();
+  const materialRows = Array.from(row.querySelectorAll(".product-material-row"));
+  const expressName = row.dataset.expressLabel || `Express #${index + 1}`;
+
+  if (!quantity) {
+    throw new Error(`Completá la cantidad en la fila ${index + 1}.`);
+  }
+  if (!materialRows.length) {
+    throw new Error(`El producto express "${expressName}" debe tener al menos un material.`);
+  }
+
+  const materials = materialRows.map((materialRow, materialIndex) => {
+    const materialName = materialRow.querySelector('[name="materialName"]').value.trim();
+    const materialQuantity = materialRow.querySelector('[name="quantity"]').value.trim();
+    const matchedMaterial = findMaterialByName(materialName);
+
+    if (!materialName || !materialQuantity) {
+      throw new Error(`Completá material y cantidad en el material ${materialIndex + 1} de "${expressName}".`);
+    }
+    if (!matchedMaterial) {
+      throw new Error(`El material "${materialName}" no existe en la base local.`);
+    }
+
+    materialRow.dataset.materialId = String(matchedMaterial.id);
+    return {
+      materialId: matchedMaterial.id,
+      quantity: materialQuantity,
+    };
+  });
+
+  const costTotal = calculateExpressOrderItemCost(row);
+  row.dataset.costTotal = String(roundTo(costTotal, 4));
+
+  return {
+    type: "express",
+    productName: expressName,
+    quantity,
+    materials,
+  };
+}
+
+function renumberExpressOrderItems() {
+  let expressIndex = 0;
+  dom.orderItemsContainer.querySelectorAll(".order-item-row").forEach((row) => {
+    if (row.dataset.itemKind !== "express") {
       return;
     }
-    menu.classList.add("hidden");
+
+    expressIndex += 1;
+    const expressLabel = `Express #${expressIndex}`;
+    row.dataset.expressLabel = expressLabel;
+    const labelNode = row.querySelector("[data-express-label]");
+    if (labelNode) {
+      labelNode.textContent = expressLabel;
+    }
   });
 }
 
@@ -1426,17 +1626,27 @@ function openOrderModal(order = null) {
   setOrderCustomTotal(order?.usesCustomTotal, order?.customTotal);
 
   if (order?.items?.length) {
-    order.items.forEach((item) => addOrderItemRow(item));
+    order.items.forEach((item) => {
+      if (item.kind === "express") {
+        addExpressOrderItemRow(item);
+        return;
+      }
+      addOrderItemRow(item);
+    });
   } else {
-    addOrderItemRow();
+    addDefaultOrderItemRow();
   }
 
+  renumberExpressOrderItems();
   refreshOpenOrderItemRows();
   openModal(dom.orderModal);
 }
 
 function addOrderItemRow(item = null) {
-  dom.orderItemsContainer.insertAdjacentHTML("beforeend", orderItemTemplate(item));
+  dom.orderItemsContainer.insertAdjacentHTML(
+    "beforeend",
+    orderItemTemplate(item ? { ...item, kind: "product" } : { kind: "product" })
+  );
   const row = dom.orderItemsContainer.lastElementChild;
   if (row) {
     updateOrderItemSummary(row);
@@ -1445,14 +1655,58 @@ function addOrderItemRow(item = null) {
   }
 }
 
+function addExpressOrderItemRow(item = null) {
+  dom.orderItemsContainer.insertAdjacentHTML("beforeend", expressOrderItemTemplate(item));
+  const row = dom.orderItemsContainer.lastElementChild;
+  if (!row) {
+    return;
+  }
+
+  const materialsContainer = getExpressMaterialsContainer(row);
+  if (item?.materials?.length) {
+    item.materials.forEach((material) => addProductMaterialRow(material, materialsContainer));
+  } else {
+    addProductMaterialRow(null, materialsContainer);
+  }
+
+  renumberExpressOrderItems();
+  updateExpressOrderItemSummary(row);
+  updateOrderModalTotals();
+  row.querySelector('[name="quantity"]')?.focus();
+}
+
+function removeOrderItemsByKind(kind) {
+  dom.orderItemsContainer
+    .querySelectorAll(`.order-item-row[data-item-kind="${kind}"]`)
+    .forEach((row) => row.remove());
+  renumberExpressOrderItems();
+}
+
 function addBudgetItemRow(item = null) {
-  dom.budgetItemsContainer.insertAdjacentHTML("beforeend", orderItemTemplate(item));
+  dom.budgetItemsContainer.insertAdjacentHTML(
+    "beforeend",
+    orderItemTemplate(item ? { ...item, kind: "product" } : { kind: "product" })
+  );
   const row = dom.budgetItemsContainer.lastElementChild;
   if (row) {
     updateOrderItemSummary(row);
     updateBudgetTotals();
     row.querySelector('[name="productName"]')?.focus();
   }
+}
+
+function addDefaultOrderItemRow() {
+  if (state.products.length) {
+    addOrderItemRow();
+    return;
+  }
+
+  if (state.materials.length) {
+    addExpressOrderItemRow();
+    return;
+  }
+
+  addOrderItemRow();
 }
 
 function refreshOpenOrderItemRows() {
@@ -1467,7 +1721,14 @@ function refreshBudgetItemRows() {
 }
 
 function refreshItemSummaries(container, afterRefresh) {
-  container.querySelectorAll(".order-item-row").forEach(updateOrderItemSummary);
+  container.querySelectorAll(".order-item-row").forEach((row) => {
+    if (row.dataset.itemKind === "express") {
+      row.querySelectorAll(".product-material-row").forEach(updateProductMaterialRow);
+      updateExpressOrderItemSummary(row);
+      return;
+    }
+    updateOrderItemSummary(row);
+  });
   afterRefresh();
 }
 
@@ -1511,6 +1772,15 @@ function updatePricingSummary({
 
 function calculateItemsCostTotal(container) {
   return Array.from(container.querySelectorAll(".order-item-row")).reduce((accumulator, row) => {
+    const storedTotal = Number.parseFloat(row.dataset.costTotal);
+    if (Number.isFinite(storedTotal) && storedTotal >= 0) {
+      return accumulator + storedTotal;
+    }
+
+    if (row.dataset.itemKind === "express") {
+      return accumulator + calculateExpressOrderItemCost(row);
+    }
+
     const product = findProductByName(row.querySelector('[name="productName"]').value.trim());
     const quantity = Number.parseFloat(row.querySelector('[name="quantity"]').value);
     if (!product || !Number.isFinite(quantity) || quantity <= 0) {
@@ -1524,6 +1794,7 @@ async function submitOrderForm(event) {
   event.preventDefault();
 
   try {
+    renumberExpressOrderItems();
     const isEditing = Boolean(state.editingOrderId);
     const payload = {
       date: dom.orderForm.elements.date.value,
@@ -1567,7 +1838,12 @@ function collectOrderItems() {
     throw new Error("Agregá al menos un producto al pedido.");
   }
 
+  renumberExpressOrderItems();
   return rows.map((row, index) => {
+    if (row.dataset.itemKind === "express") {
+      return collectExpressOrderItem(row, index);
+    }
+
     const productName = row.querySelector('[name="productName"]').value.trim();
     const quantity = row.querySelector('[name="quantity"]').value.trim();
     const matchedProduct = findProductByName(productName);
@@ -1580,7 +1856,9 @@ function collectOrderItems() {
     }
 
     row.dataset.productId = String(matchedProduct.id);
+    row.dataset.costTotal = String(roundTo(matchedProduct.price * Number(quantity), 4));
     return {
+      type: "product",
       productId: matchedProduct.id,
       productName: matchedProduct.name,
       quantity,
@@ -1589,6 +1867,11 @@ function collectOrderItems() {
 }
 
 function updateOrderItemSummary(row) {
+  if (row.dataset.itemKind === "express") {
+    updateExpressOrderItemSummary(row);
+    return;
+  }
+
   const nameInput = row.querySelector('[name="productName"]');
   const quantityInput = row.querySelector('[name="quantity"]');
   const summary = row.querySelector("[data-item-subtotal]");
@@ -1602,11 +1885,14 @@ function updateOrderItemSummary(row) {
   }
 
   if (!product || !Number.isFinite(quantity) || quantity <= 0) {
+    row.dataset.costTotal = "0";
     summary.textContent = formatMoney(0);
     return;
   }
 
-  summary.textContent = formatMoney(product.price * quantity);
+  const total = roundTo(product.price * quantity, 4);
+  row.dataset.costTotal = String(total);
+  summary.textContent = formatMoney(total);
 }
 
 function renderProductDropdown(row, shouldOpen) {
@@ -1832,6 +2118,7 @@ function closeModal(modal) {
   if (modal === dom.orderModal) {
     state.editingOrderId = null;
     closeAllProductDropdowns();
+    closeAllMaterialDropdowns();
   }
   if (modal === dom.deleteModal) {
     state.pendingDelete = null;
@@ -1932,7 +2219,7 @@ function productMaterialTemplate(component) {
 
 function orderItemTemplate(item) {
   return `
-    <div class="order-item-row" data-product-id="${item?.productId ?? ""}">
+    <div class="order-item-row" data-item-kind="${item?.kind || "product"}" data-product-id="${item?.productId ?? ""}" data-cost-total="${item?.subtotal ?? 0}">
       <label>
         <span>Producto</span>
         <div class="product-combobox">
@@ -1966,6 +2253,49 @@ function orderItemTemplate(item) {
         <button class="icon-button delete" type="button" data-remove-order-item aria-label="Quitar producto">
           ${crossIcon()}
         </button>
+      </div>
+    </div>
+  `;
+}
+
+function expressOrderItemTemplate(item) {
+  const expressLabel = item?.productName || item?.expressLabel || "Express #1";
+  return `
+    <div class="order-item-row express-item-row" data-item-kind="express" data-express-product-id="${item?.expressProductId ?? ""}" data-cost-total="${item?.subtotal ?? 0}">
+      <div class="express-item-top">
+        <label>
+          <span>Producto Express</span>
+          <div class="express-name-pill" data-express-label>${escapeHtml(expressLabel)}</div>
+        </label>
+        <label>
+          <span>Cantidad</span>
+          <input
+            class="table-input"
+            type="number"
+            min="0.0001"
+            step="0.0001"
+            name="quantity"
+            value="${escapeAttribute(item?.quantity ?? 1)}"
+          >
+        </label>
+        <div>
+          <span>Subtotal</span>
+          <div class="order-summary" data-item-subtotal>${formatMoney(item?.subtotal || 0)}</div>
+        </div>
+        <div class="line-item-actions">
+          <button class="icon-button delete" type="button" data-remove-express-item aria-label="Quitar producto express">
+            ${crossIcon()}
+          </button>
+        </div>
+      </div>
+      <div class="express-materials-block">
+        <div class="line-items-header express-materials-header">
+          <div>
+            <h5>Materiales del producto</h5>
+          </div>
+          <button class="ghost-button" type="button" data-add-express-material>+ Agregar material</button>
+        </div>
+        <div class="order-items-container express-materials-container" data-express-materials-container></div>
       </div>
     </div>
   `;
