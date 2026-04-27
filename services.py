@@ -206,6 +206,7 @@ def parse_express_item(item: dict, multiplier: float) -> dict:
         "product_id": None,
         "quantity": quantity,
         "unit_price": round(cost * multiplier, 2),
+        "expressName": parse_text(item.get("expressName"), "Producto Express"),
         "express_product": {
             "materials": components,
         },
@@ -558,7 +559,7 @@ def save_order(order_id: int | None, payload: dict) -> int:
         for item in payload["items"]:
             if item["kind"] == "express":
                 express_product = item["express_product"]
-                express_name = f"Express #{express_counter}"
+                express_name = parse_text(item.get("expressName"), "Producto Express") or f"Express #{express_counter}"
                 express_counter += 1
                 cursor = connection.execute(
                     """
@@ -783,7 +784,6 @@ def fetch_orders() -> list[dict]:
 
     items_by_order: dict[int, list[dict]] = defaultdict(list)
     materials_by_express_product: dict[int, list[dict]] = defaultdict(list)
-    express_numbers_by_order: dict[int, int] = defaultdict(int)
     for row in express_material_rows:
         quantity = round(float(row["quantity"]), 4)
         unit_price = round(float(row["unit_price"]), 4)
@@ -801,11 +801,7 @@ def fetch_orders() -> list[dict]:
 
     for item in items_rows:
         is_express = item["express_product_id"] is not None
-        if is_express:
-            express_numbers_by_order[item["order_id"]] += 1
-            product_name = f"Express #{express_numbers_by_order[item['order_id']]}"
-        else:
-            product_name = item["current_product_name"] or item["product_name"]
+        product_name = item["current_product_name"] or item["product_name"]
         quantity = round(float(item["quantity"]), 4)
         unit_price = round(float(item["unit_price"]), 2)
         items_by_order[item["order_id"]].append(

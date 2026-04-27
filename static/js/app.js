@@ -432,6 +432,13 @@ function bindEvents() {
     const row = event.target.closest(".order-item-row");
     if (row) {
       const materialRow = event.target.closest(".product-material-row");
+      if (row.dataset.itemKind === "express" && !materialRow && event.target.name === "expressName") {
+        syncExpressNameMode(row);
+        renumberExpressOrderItems();
+        updateExpressOrderItemSummary(row);
+        updateOrderModalTotals();
+        return;
+      }
       if (row.dataset.itemKind === "express" && !materialRow && event.target.name === "quantity") {
         updateExpressOrderItemSummary(row);
         updateOrderModalTotals();
@@ -1470,9 +1477,10 @@ function calculateExpressOrderItemCost(row) {
 }
 
 function collectExpressOrderItem(row, index) {
+  const expressInput = row.querySelector('[name="expressName"]');
   const quantity = row.querySelector('[name="quantity"]').value.trim();
   const materialRows = Array.from(row.querySelectorAll(".product-material-row"));
-  const expressName = row.dataset.expressLabel || `Express #${index + 1}`;
+  const expressName = expressInput?.value.trim() || row.dataset.expressDefaultLabel || `Express #${index + 1}`;
 
   if (!quantity) {
     throw new Error(`Completá la cantidad en la fila ${index + 1}.`);
@@ -1505,6 +1513,7 @@ function collectExpressOrderItem(row, index) {
 
   return {
     type: "express",
+    expressName,
     productName: expressName,
     quantity,
     materials,
@@ -1520,12 +1529,42 @@ function renumberExpressOrderItems() {
 
     expressIndex += 1;
     const expressLabel = `Express #${expressIndex}`;
-    row.dataset.expressLabel = expressLabel;
-    const labelNode = row.querySelector("[data-express-label]");
-    if (labelNode) {
-      labelNode.textContent = expressLabel;
+    const input = row.querySelector('[name="expressName"]');
+    row.dataset.expressDefaultLabel = expressLabel;
+
+    if (!input) {
+      return;
+    }
+
+    const currentValue = input.value.trim();
+    const isCustomMode = row.dataset.expressNameMode === "custom";
+
+    if (!isCustomMode || !currentValue) {
+      input.value = expressLabel;
+      row.dataset.expressNameMode = "auto";
     }
   });
+}
+
+function syncExpressNameMode(row) {
+  const input = row.querySelector('[name="expressName"]');
+  if (!input) {
+    return;
+  }
+
+  const value = input.value.trim();
+  const defaultLabel = row.dataset.expressDefaultLabel || "";
+  if (!value && defaultLabel) {
+    input.value = defaultLabel;
+    row.dataset.expressNameMode = "auto";
+    return;
+  }
+
+  row.dataset.expressNameMode = !value || value === defaultLabel ? "auto" : "custom";
+}
+
+function isAutoExpressName(value) {
+  return /^Express #\d+$/i.test(String(value || "").trim());
 }
 
 function updateProductModalTotal() {
@@ -1662,6 +1701,12 @@ function addExpressOrderItemRow(item = null) {
     return;
   }
 
+  const expressInput = row.querySelector('[name="expressName"]');
+  if (expressInput) {
+    row.dataset.expressDefaultLabel = expressInput.value.trim();
+    row.dataset.expressNameMode = item?.productName && !isAutoExpressName(item.productName) ? "custom" : "auto";
+  }
+
   const materialsContainer = getExpressMaterialsContainer(row);
   if (item?.materials?.length) {
     item.materials.forEach((material) => addProductMaterialRow(material, materialsContainer));
@@ -1672,7 +1717,7 @@ function addExpressOrderItemRow(item = null) {
   renumberExpressOrderItems();
   updateExpressOrderItemSummary(row);
   updateOrderModalTotals();
-  row.querySelector('[name="quantity"]')?.focus();
+  row.querySelector('[name="expressName"]')?.focus();
 }
 
 function removeOrderItemsByKind(kind) {
@@ -2261,11 +2306,18 @@ function orderItemTemplate(item) {
 function expressOrderItemTemplate(item) {
   const expressLabel = item?.productName || item?.expressLabel || "Express #1";
   return `
-    <div class="order-item-row express-item-row" data-item-kind="express" data-express-product-id="${item?.expressProductId ?? ""}" data-cost-total="${item?.subtotal ?? 0}">
+    <div class="order-item-row express-item-row" data-item-kind="express" data-express-product-id="${item?.expressProductId ?? ""}" data-cost-total="${item?.subtotal ?? 0}" data-express-default-label="${escapeAttribute(expressLabel)}" data-express-name-mode="${item?.productName && !isAutoExpressName(item.productName) ? "custom" : "auto"}">
       <div class="express-item-top">
         <label>
           <span>Producto Express</span>
-          <div class="express-name-pill" data-express-label>${escapeHtml(expressLabel)}</div>
+          <input
+            class="table-input"
+            type="text"
+            name="expressName"
+            autocomplete="off"
+            value="${escapeAttribute(expressLabel)}"
+            placeholder="Express #1"
+          >
         </label>
         <label>
           <span>Cantidad</span>
